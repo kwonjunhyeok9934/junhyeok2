@@ -5,3 +5,6 @@
 // anon 키는 브라우저에 노출되는 것을 전제로 한 공개 키다. service_role 키는 절대 넣지 않는다.
 export const SUPABASE_URL = 'https://jfrmpmlbweyecwfwlesh.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_KaifTWAmCOxWs8NhMGx8FA_1vEnqyc_';
+
+// 웹 푸시용 공개 키 (VAPID). 짝이 되는 비밀 키는 Supabase Edge Function 의 Secrets 에만 둔다.
+export const VAPID_PUBLIC_KEY = 'BPs7u319qyJSe2SD2YL81CYdMGB-rqfAVM5SD3nUge2eDj9IiIqlo7cRQ--Kb-Vq9bsBhb_x3VkKo5X59sVkceA';

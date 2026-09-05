@@ -196,11 +196,27 @@ select * from (values
 ) as v(name, kind, sort_order)
 where not exists (select 1 from categories where kind = 'fixed');
 
--- 14. 확인용: 표 6개가 보이면 성공 ---------------------------------------------
+-- 15. 푸시 알림 구독 ------------------------------------------------------------
+
+create table if not exists push_subscriptions (
+  id         bigint generated always as identity primary key,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  endpoint   text not null unique,
+  p256dh     text not null,
+  auth       text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table push_subscriptions enable row level security;
+drop policy if exists "auth all" on push_subscriptions;
+create policy "auth all" on push_subscriptions for all to authenticated using (true) with check (true);
+
+-- 16. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
 union all select 'categories', count(*) from categories
 union all select 'transactions', count(*) from transactions
 union all select 'todos', count(*) from todos
 union all select 'events', count(*) from events
-union all select 'fixed_costs', count(*) from fixed_costs;
+union all select 'fixed_costs', count(*) from fixed_costs
+union all select 'push_subscriptions', count(*) from push_subscriptions;

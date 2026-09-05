@@ -1,6 +1,6 @@
 // 앱 껍데기만 캐시한다. Supabase·CDN 요청은 건드리지 않는다.
 // 파일을 바꾸면 CACHE 이름의 버전을 올려서 옛 캐시가 지워지게 한다.
-const CACHE = 'couple-v11';
+const CACHE = 'couple-v12';
 const SHELL = [
   './',
   './index.html',
@@ -16,6 +16,7 @@ const SHELL = [
   './js/schedule.js',
   './js/fixed.js',
   './js/home.js',
+  './js/push.js',
   './js/ui.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -44,5 +45,34 @@ self.addEventListener('fetch', (e) => {
         return res;
       })
       .catch(() => caches.match(e.request).then((hit) => hit || caches.match('./index.html'))),
+  );
+});
+
+// ---- 푸시 알림 ----
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch { data = { body: e.data && e.data.text() }; }
+  const title = data.title || '우리집';
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      tag: data.tag || 'couple',
+      renotify: true,
+      data: { url: data.url || './#home' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || './#home', self.location.href).href;
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const open = list.find((c) => c.url.startsWith(self.location.origin));
+      if (open) return open.focus().then((c) => c.navigate?.(url) ?? c);
+      return self.clients.openWindow(url);
+    }),
   );
 });

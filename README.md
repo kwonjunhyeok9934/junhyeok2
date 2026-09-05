@@ -31,6 +31,8 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 
 수동 검증 체크리스트: `docs/checklist/ledger_v1.html` (브라우저로 열기)
 
+알림(웹 푸시) 설정: `docs/알림_설정.md`
+
 ## 파일
 
 | 경로 | 역할 |
@@ -42,6 +44,8 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 | `js/schedule.js` | 스케줄 탭 (월간 달력·그날 일정·일정 시트) |
 | `js/fixed.js` | 고정비 탭 (항목 목록·합계·시트) |
 | `js/home.js` | 홈 탭 (이번 달 지출·오늘 일정·할일·고정비 요약) |
+| `js/push.js` | 알림 구독 켜기/끄기 |
+| `supabase/functions/notify/index.ts` | 알림 발송 Edge Function (웹훅·아침 요약) |
 
 동작 메모: 가계부 조회 기간(1·3·6·12개월·직접 지정)은 폰에 기억된다. 뒤로가기는 열린 시트·설정을 먼저 닫고, 없으면 두 번 눌러 종료한다.
 | `js/categories.js` | 카테고리 CRUD와 설정 화면 |

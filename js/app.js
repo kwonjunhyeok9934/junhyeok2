@@ -6,8 +6,9 @@ import * as todo from './todo.js';
 import * as schedule from './schedule.js';
 import * as fixed from './fixed.js';
 import * as home from './home.js';
+import * as push from './push.js';
 
-const APP_VERSION = 'v11'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v12'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -281,6 +282,7 @@ function bindTheme() {
 function bindSettings() {
   $('#app-version').textContent = `우리집 ${APP_VERSION}`;
   bindTheme();
+  bindPush();
   $('#btn-settings').addEventListener('click', openSettings);
   $('#settings-close').addEventListener('click', () => {
     view.settings.hidden = true;
@@ -303,8 +305,46 @@ function bindSettings() {
   });
 }
 
+async function renderPush() {
+  const stateEl = $('#push-state');
+  const toggle = $('#push-toggle');
+  const test = $('#push-test');
+  const state = await push.getState();
+  const text = { unsupported: '이 브라우저는 알림을 지원하지 않아요', denied: '알림이 차단돼 있어요. 폰 설정에서 이 앱의 알림을 허용해 주세요', on: '이 폰에서 알림 받는 중', off: '이 폰은 알림이 꺼져 있어요' };
+  stateEl.textContent = text[state];
+  toggle.hidden = state === 'unsupported' || state === 'denied';
+  toggle.textContent = state === 'on' ? '알림 끄기' : '알림 켜기';
+  toggle.classList.toggle('primary', state !== 'on');
+  test.hidden = state !== 'on';
+}
+
+function bindPush() {
+  $('#push-toggle').addEventListener('click', async () => {
+    const btn = $('#push-toggle');
+    btn.disabled = true;
+    try {
+      if ((await push.getState()) === 'on') {
+        await push.disable();
+        toast('알림을 꺼요');
+      } else {
+        await push.enable(currentUser.id);
+        toast('알림을 켰어요');
+        haptic(15);
+      }
+    } catch (err) {
+      console.error(err);
+      toast(err.message === 'permission' ? '알림 권한을 허용해 주세요' : '알림 설정에 실패했어요');
+    } finally {
+      btn.disabled = false;
+      renderPush();
+    }
+  });
+  $('#push-test').addEventListener('click', () => push.testLocal().catch((e) => { console.error(e); toast('알림을 띄우지 못했어요'); }));
+}
+
 async function openSettings() {
   view.settings.hidden = false;
+  renderPush();
   const { data } = await sb.from('profiles').select('name').eq('id', currentUser.id).maybeSingle();
   $('#my-name').value = data?.name ?? '';
   await renderCats();
