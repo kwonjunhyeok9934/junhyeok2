@@ -16,7 +16,7 @@ create table if not exists profiles (
 create table if not exists categories (
   id         bigint generated always as identity primary key,
   name       text not null,
-  kind       text not null check (kind in ('expense', 'income')),
+  kind       text not null check (kind in ('expense', 'income', 'fixed')),
   sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
@@ -174,7 +174,29 @@ begin
   end if;
 end $$;
 
--- 12. 확인용: 표 6개가 보이면 성공 ---------------------------------------------
+-- 13. 카테고리에 고정비 종류 허용 + 기본 고정비 카테고리 -----------------------
+
+alter table categories drop constraint if exists categories_kind_check;
+alter table categories add constraint categories_kind_check check (kind in ('expense', 'income', 'fixed'));
+
+insert into categories (name, kind, sort_order)
+select * from (values
+  ('월세',       'fixed', 10),
+  ('관리비',     'fixed', 20),
+  ('통신비',     'fixed', 30),
+  ('인터넷',     'fixed', 40),
+  ('실비보험',   'fixed', 50),
+  ('운전자보험', 'fixed', 60),
+  ('자동차보험', 'fixed', 70),
+  ('화재보험',   'fixed', 80),
+  ('생명보험',   'fixed', 90),
+  ('구독',       'fixed', 100),
+  ('대출이자',   'fixed', 110),
+  ('적금',       'fixed', 120)
+) as v(name, kind, sort_order)
+where not exists (select 1 from categories where kind = 'fixed');
+
+-- 14. 확인용: 표 6개가 보이면 성공 ---------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
 union all select 'categories', count(*) from categories

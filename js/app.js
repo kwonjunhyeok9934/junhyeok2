@@ -6,7 +6,7 @@ import * as todo from './todo.js';
 import * as schedule from './schedule.js';
 import * as fixed from './fixed.js';
 
-const APP_VERSION = 'v9'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v10'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -176,8 +176,8 @@ function bindTabs() {
   });
 }
 
-function currentTab() {
-  const name = location.hash.replace('#', '') || 'ledger';
+function currentTab(hash = location.hash) {
+  const name = hash.replace('#', '') || 'ledger';
   return TABS[name] ? name : 'ledger';
 }
 
@@ -204,26 +204,34 @@ function routeHash() {
 
 let exitArmed = 0;
 let lastHash = location.hash;
+let guardArmed = false;
+
+// 크롬은 사용자가 화면을 건드리기 전에 앱이 넣은 히스토리 항목을 뒤로가기에서 무시한다.
+// 그래서 첫 터치 직후에 가드 항목을 넣는다.
+function armGuard() {
+  if (guardArmed) return;
+  guardArmed = true;
+  history.pushState({ guard: true }, '', '#' + currentTab());
+}
+
 function setupBackGuard() {
-  history.pushState({ guard: true }, '', location.href);
+  document.addEventListener('pointerdown', armGuard, { once: true, capture: true });
+
   window.addEventListener('popstate', () => {
-    // 주소의 # 만 바뀐 것은 탭 이동이다. 가드만 유지하고 넘어간다.
-    if (location.hash !== lastHash) {
-      lastHash = location.hash;
-      if (!history.state?.guard) history.pushState({ guard: true }, '', location.href);
-      return;
-    }
-    // 항상 가드 항목을 다시 올려 둔다. 진짜 종료는 아래에서 history.back() 으로.
+    // 뒤로가기로 이전 항목에 내려오면 주소의 # 이 바뀔 수 있다. 보고 있던 탭을 그대로 유지한다.
+    const tabHash = '#' + currentTab(lastHash);
+    if (location.hash !== tabHash) history.replaceState(null, '', tabHash);
+
     const openSheetEl = document.querySelector('.sheet.open');
     if (openSheetEl) {
       closeSheet(openSheetEl);
-      history.pushState({ guard: true }, '', location.href);
+      history.pushState({ guard: true }, '', tabHash);
       return;
     }
     if (!view.settings.hidden) {
       view.settings.hidden = true;
       ledger.refresh();
-      history.pushState({ guard: true }, '', location.href);
+      history.pushState({ guard: true }, '', tabHash);
       return;
     }
     if (Date.now() - exitArmed < 2000) {
@@ -232,7 +240,7 @@ function setupBackGuard() {
     }
     exitArmed = Date.now();
     toast('뒤로가기를 한 번 더 누르면 종료합니다');
-    history.pushState({ guard: true }, '', location.href);
+    history.pushState({ guard: true }, '', tabHash);
   });
 }
 

@@ -2,9 +2,9 @@
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
 import { formatWon, parseWon } from './calc.js';
+import { fetchCategories, addCategory } from './categories.js';
 
-const state = { items: [], profiles: [], editing: null };
-const PRESETS = ['월세', '관리비', '통신비', '인터넷', '실비보험', '운전자보험', '자동차보험', '화재보험', '생명보험', '구독', '대출이자', '적금', '교통', '헬스장'];
+const state = { items: [], profiles: [], cats: [], editing: null };
 let el = null;
 let initialized = false;
 
@@ -15,6 +15,9 @@ export function init() {
     sum: $('#fixed-sum'),
     byOwner: $('#fixed-by-owner'),
     presets: $('#fixed-presets'),
+    newCatRow: $('#fixed-new-cat-row'),
+    newCat: $('#fixed-new-cat'),
+    newCatOk: $('#fixed-new-cat-ok'),
     owner: $('#fixed-owner'),
     list: $('#fixed-list'),
     sheet: $('#sheet-fixed'),
@@ -28,16 +31,27 @@ export function init() {
   };
   bindSheetBackdrop(el.sheet);
 
-  el.presets.innerHTML = PRESETS.map((n) => `<button type="button" class="chip" data-name="${n}">${n}</button>`).join('');
   el.presets.addEventListener('click', (e) => {
-    const chip = e.target.closest('[data-name]');
+    const chip = e.target.closest('.chip');
     if (!chip) return;
+    if (chip.dataset.add !== undefined) {
+      el.newCatRow.hidden = false;
+      el.newCat.focus();
+      return;
+    }
     el.name.value = chip.dataset.name;
     markPreset();
     el.name.dispatchEvent(new Event('input'));
     el.amount.focus();
   });
   el.name.addEventListener('input', markPreset);
+  el.newCatOk.addEventListener('click', createCategory);
+  el.newCat.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      createCategory();
+    }
+  });
 
   el.list.addEventListener('click', (e) => {
     const row = e.target.closest('.tx-row');
@@ -65,17 +79,44 @@ function unwrap({ data, error }) {
   return data;
 }
 
+function renderChips() {
+  const chips = state.cats.filter((c) => c.kind === 'fixed').map((c) => `<button type="button" class="chip" data-name="${escapeHtml(c.name)}">${escapeHtml(c.name)}</button>`);
+  chips.push('<button type="button" class="chip add" data-add>＋ 새 카테고리</button>');
+  el.presets.innerHTML = chips.join('');
+  markPreset();
+}
+
 function markPreset() {
-  el.presets.querySelectorAll('.chip').forEach((c) => c.classList.toggle('selected', c.dataset.name === el.name.value.trim()));
+  el.presets.querySelectorAll('.chip[data-name]').forEach((c) => c.classList.toggle('selected', c.dataset.name === el.name.value.trim()));
+}
+
+async function createCategory() {
+  const name = el.newCat.value.trim();
+  if (!name) return;
+  try {
+    await addCategory(name, 'fixed', state.cats);
+    state.cats = await fetchCategories();
+    el.newCat.value = '';
+    el.newCatRow.hidden = true;
+    el.name.value = name;
+    renderChips();
+    el.name.dispatchEvent(new Event('input'));
+    el.amount.focus();
+  } catch (err) {
+    console.error(err);
+    toast('카테고리를 추가하지 못했어요');
+  }
 }
 
 export async function refresh() {
   try {
-    const [profiles, items] = await Promise.all([
+    const [profiles, cats, items] = await Promise.all([
       sb.from('profiles').select('id,name,color').then(unwrap),
+      fetchCategories(),
       sb.from('fixed_costs').select('*').order('created_at', { ascending: true }).then(unwrap),
     ]);
     state.profiles = profiles;
+    state.cats = cats;
     state.items = items;
     render();
   } catch (err) {
@@ -142,7 +183,9 @@ function openFixedSheet(item) {
   el.name.value = item?.name ?? '';
   el.amount.value = item ? formatWon(item.amount) : '';
   el.memo.value = item?.memo ?? '';
-  markPreset();
+  el.newCatRow.hidden = true;
+  el.newCat.value = '';
+  renderChips();
   el.owner.innerHTML = owners()
     .map(
       (o) => `<label><input type="radio" name="fixed-owner" value="${o.id ?? ''}" ${String(item?.owner ?? '') === String(o.id ?? '') ? 'checked' : ''}><span>${escapeHtml(o.name)}</span></label>`,
