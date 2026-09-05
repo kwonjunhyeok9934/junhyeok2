@@ -4,6 +4,9 @@ import { $, toast, haptic, closeSheet } from './ui.js';
 import * as ledger from './ledger.js';
 import * as todo from './todo.js';
 import * as schedule from './schedule.js';
+import * as fixed from './fixed.js';
+
+const APP_VERSION = 'v8'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -15,6 +18,7 @@ const view = {
 
 const TABS = {
   ledger: { title: '가계부', el: $('#tab-ledger') },
+  fixed: { title: '고정비', el: $('#tab-fixed') },
   todo: { title: '할일', el: $('#tab-todo') },
   schedule: { title: '스케줄', el: $('#tab-schedule') },
 };
@@ -112,10 +116,12 @@ function enterMain(user) {
   ledger.init({ userId: user.id });
   todo.init({ userId: user.id });
   schedule.init({ userId: user.id });
+  fixed.init();
   routeHash();
   ledger.refresh();
   todo.refresh();
   schedule.refresh();
+  fixed.refresh();
   subscribeRealtime();
   document.addEventListener('visibilitychange', onVisible);
 }
@@ -134,6 +140,7 @@ function onVisible() {
   ledger.refresh();
   todo.refresh();
   schedule.refresh();
+  fixed.refresh();
 }
 
 function subscribeRealtime() {
@@ -144,6 +151,7 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => ledger.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => todo.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => schedule.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => fixed.refresh())
     .subscribe();
 }
 
@@ -161,7 +169,9 @@ function bindTabs() {
   );
   setupBackGuard();
   $('#btn-add').addEventListener('click', () => {
-    if (currentTab() === 'schedule') schedule.openNew();
+    const tab = currentTab();
+    if (tab === 'schedule') schedule.openNew();
+    else if (tab === 'fixed') fixed.openNew();
     else ledger.openNew();
   });
 }
@@ -221,7 +231,7 @@ function setupBackGuard() {
       return;
     }
     exitArmed = Date.now();
-    toast('한 번 더 누르면 종료돼요');
+    toast('뒤로가기를 한 번 더 누르면 종료합니다');
     history.pushState({ guard: true }, '', location.href);
   });
 }
@@ -229,6 +239,7 @@ function setupBackGuard() {
 // ---- 설정 -----------------------------------------------------------------
 
 function bindSettings() {
+  $('#app-version').textContent = `우리집 ${APP_VERSION}`;
   $('#btn-settings').addEventListener('click', openSettings);
   $('#settings-close').addEventListener('click', () => {
     view.settings.hidden = true;

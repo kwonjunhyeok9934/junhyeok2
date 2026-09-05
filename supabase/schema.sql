@@ -151,10 +151,32 @@ begin
   end if;
 end $$;
 
--- 10. 확인용: 표 5개와 카테고리 개수가 보이면 성공 ------------------------------
+-- 11. 고정비 -------------------------------------------------------------------
+
+create table if not exists fixed_costs (
+  id         bigint generated always as identity primary key,
+  name       text not null,
+  amount     integer not null check (amount > 0),
+  memo       text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table fixed_costs enable row level security;
+drop policy if exists "auth all" on fixed_costs;
+create policy "auth all" on fixed_costs for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'fixed_costs') then
+    alter publication supabase_realtime add table fixed_costs;
+  end if;
+end $$;
+
+-- 12. 확인용: 표 6개가 보이면 성공 ---------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
 union all select 'categories', count(*) from categories
 union all select 'transactions', count(*) from transactions
 union all select 'todos', count(*) from todos
-union all select 'events', count(*) from events;
+union all select 'events', count(*) from events
+union all select 'fixed_costs', count(*) from fixed_costs;

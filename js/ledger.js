@@ -11,7 +11,6 @@ const state = {
   month: 0,
   txs: [],
   cats: [],
-  profiles: [],
   userId: null,
   editing: null,      // 수정 중인 거래 행, 새 항목이면 null
   kind: 'expense',
@@ -97,7 +96,7 @@ export function init({ userId }) {
   el.form.querySelectorAll('input[name="kind"]').forEach((r) =>
     r.addEventListener('change', () => {
       state.kind = r.value;
-      state.selectedCat = null;
+      state.selectedCat = defaultCategory(state.kind);
       renderChips();
     }),
   );
@@ -182,14 +181,12 @@ export async function refresh() {
   const { start, end } = currentRange();
   const custom = state.span === 'custom';
   el.label.textContent = rangeLabel(start, end, custom);
-  el.rangeBtn.textContent = `${SPAN_LABEL[state.span]} ▾`;
   el.rangeBtn.classList.toggle('active', state.span !== 1);
   el.prev.hidden = custom;
   el.next.hidden = custom;
   try {
-    const [cats, profiles, txs] = await Promise.all([
+    const [cats, txs] = await Promise.all([
       fetchCategories(),
-      sb.from('profiles').select('id,name,color').then(unwrap),
       sb
         .from('transactions')
         .select('*')
@@ -200,7 +197,6 @@ export async function refresh() {
         .then(unwrap),
     ]);
     state.cats = cats;
-    state.profiles = profiles;
     state.txs = txs;
     render();
   } catch (err) {
@@ -233,13 +229,12 @@ function render() {
     return;
   }
   const catName = new Map(state.cats.map((c) => [c.id, c.name]));
-  const profile = new Map(state.profiles.map((p) => [p.id, p]));
   let i = 0;
   el.list.innerHTML = groupByDate(state.txs)
     .map(
       (g) => `
       <div class="date-head">${dateHead(g.date)}</div>
-      ${g.items.map((t) => txRow(t, catName, profile, i++)).join('')}`,
+      ${g.items.map((t) => txRow(t, catName, i++)).join('')}`,
     )
     .join('');
 }
@@ -250,10 +245,7 @@ function dateHead(date) {
   return `${m}월 ${d}일 (${day})`;
 }
 
-function txRow(t, catName, profile, i) {
-  const p = profile.get(t.created_by);
-  const initial = p ? p.name.slice(0, 1) : '?';
-  const color = p ? p.color : '#9ca3af';
+function txRow(t, catName, i) {
   const isIncome = t.kind === 'income';
   return `
     <div class="tx-row" data-id="${t.id}" style="--i:${Math.min(i, 12)}">
@@ -262,7 +254,6 @@ function txRow(t, catName, profile, i) {
         ${t.memo ? `<div class="tx-memo">${escapeHtml(t.memo)}</div>` : ''}
       </div>
       <div class="tx-amount ${isIncome ? 'income' : ''}">${isIncome ? '+' : ''}${formatWon(t.amount)}</div>
-      <div class="avatar" style="background:${escapeHtml(color)}" title="${escapeHtml(p?.name ?? '')}">${escapeHtml(initial)}</div>
     </div>`;
 }
 
@@ -275,7 +266,7 @@ export function openNew() {
 function openTxSheet(tx) {
   state.editing = tx ?? null;
   state.kind = tx?.kind ?? 'expense';
-  state.selectedCat = tx?.category_id ?? null;
+  state.selectedCat = tx ? tx.category_id : defaultCategory(state.kind);
 
   el.id.value = tx?.id ?? '';
   el.form.querySelector(`input[name="kind"][value="${state.kind}"]`).checked = true;
@@ -289,6 +280,12 @@ function openTxSheet(tx) {
   renderChips();
   openSheet(el.sheet);
   if (!tx) setTimeout(() => el.amount.focus(), 250);
+}
+
+// 새 지출은 '식비'가 기본 선택. 없으면 선택 없음.
+function defaultCategory(kind) {
+  if (kind !== 'expense') return null;
+  return state.cats.find((c) => c.kind === 'expense' && c.name === '식비')?.id ?? null;
 }
 
 function renderChips() {

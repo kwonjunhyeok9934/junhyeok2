@@ -1,6 +1,6 @@
 # 우리집 (junhyeok2)
 
-두 사람이 함께 쓰는 모바일 웹앱(PWA). 가계부 · 할일 · 스케줄 세 탭.
+두 사람이 함께 쓰는 모바일 웹앱(PWA). 가계부 · 고정비 · 할일 · 스케줄 네 탭.
 설계: `docs/superpowers/specs/2026-09-05-couple-ledger-design.md`
 
 - 화면: HTML/CSS/JS, 빌드 없음
@@ -40,6 +40,7 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 | `js/ledger.js` | 가계부 탭 (조회·요약·목록·입력 시트) |
 | `js/todo.js` | 할일 탭 (빠른 입력·목록·완료·편집 시트) |
 | `js/schedule.js` | 스케줄 탭 (월간 달력·그날 일정·일정 시트) |
+| `js/fixed.js` | 고정비 탭 (항목 목록·합계·시트) |
 
 동작 메모: 가계부 조회 기간(1·3·6·12개월·직접 지정)은 폰에 기억된다. 뒤로가기는 열린 시트·설정을 먼저 닫고, 없으면 두 번 눌러 종료한다.
 | `js/categories.js` | 카테고리 CRUD와 설정 화면 |

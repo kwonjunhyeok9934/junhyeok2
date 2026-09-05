@@ -91,15 +91,16 @@ input:focus { outline: 0; box-shadow: 0 0 0 2px var(--accent); background: var(-
 .retry { text-align: center; padding: 30px 0; color: var(--muted); }
 .retry .btn { margin-top: 10px; }
 
-/* ---- 스플래시 ---- */
+/* ---- 스플래시: 집이 그 자리에서 커지며 화면을 채우고 사라진다 ---- */
 #splash {
   position: fixed; inset: 0; z-index: 100; background: var(--accent);
   display: flex; align-items: center; justify-content: center;
-  transition: background-color .55s ease .15s, visibility 0s .7s;
 }
-#splash .logo { width: 96px; height: 96px; fill: #fff; animation: logoIn .55s var(--spring) both; transition: transform .7s cubic-bezier(.7, 0, .84, 0), opacity .35s ease .35s; }
-#splash.out { background-color: transparent; visibility: hidden; pointer-events: none; }
-#splash.out .logo { transform: scale(40); opacity: 0; }
+#splash .logo { width: 120px; height: 120px; fill: #fff; will-change: transform; }
+#splash.out { animation: splashFade .45s ease .3s both; pointer-events: none; }
+#splash.out .logo { animation: splashGrow .75s cubic-bezier(.55, 0, .85, .25) both; }
+@keyframes splashGrow { to { transform: scale(30); } }
+@keyframes splashFade { to { opacity: 0; visibility: hidden; } }
 
 /* ---- 로그인 ---- */
 .center-box {
@@ -312,7 +313,6 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes popIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
 @keyframes pop { 0% { transform: scale(.85); } 60% { transform: scale(1.08); } 100% { transform: none; } }
-@keyframes logoIn { from { opacity: 0; transform: scale(.55) translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes slideInRight { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 @keyframes shake { 0%,100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
@@ -320,3 +320,10 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
+
+/* ---- 고정비 ---- */
+.fixed-total { text-align: center; padding: 22px 16px; margin-bottom: 14px; }
+.fixed-total .sum-label { font-size: 13px; }
+.fixed-total strong { display: block; font-size: 30px; font-weight: 800; letter-spacing: -.03em; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.fixed-total .hint { margin-top: 4px; }
+.version { text-align: center; color: var(--muted); font-size: 12px; margin-top: 6px; }

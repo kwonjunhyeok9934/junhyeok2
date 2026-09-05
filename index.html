@@ -59,7 +59,7 @@
         <span id="month-label"></span>
         <button id="month-next" class="icon-btn" aria-label="다음 달">▶</button>
       </div>
-      <div class="range-row"><button type="button" id="range-btn" class="pill">1개월 ▾</button></div>
+      <div class="range-row"><button type="button" id="range-btn" class="pill">조회기간 ▾</button></div>
 
       <div class="summary">
         <div class="sum-item"><span class="sum-label">수입</span><strong id="sum-income" class="income">0</strong></div>
@@ -74,6 +74,15 @@
 
       <div id="tx-list"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
 
+    </section>
+
+    <section id="tab-fixed" class="tab" hidden>
+      <div class="card fixed-total">
+        <span class="sum-label">월 고정비 합계</span>
+        <strong id="fixed-sum">0</strong>
+        <p class="hint" id="fixed-count"></p>
+      </div>
+      <div id="fixed-list"><div class="skel"></div><div class="skel"></div></div>
     </section>
 
     <section id="tab-todo" class="tab" hidden>
@@ -108,6 +117,7 @@
 
   <nav class="tabbar">
     <a href="#ledger" data-tab="ledger" class="active"><span class="tab-icon">₩</span>가계부</a>
+    <a href="#fixed" data-tab="fixed"><span class="tab-icon">📌</span>고정비</a>
     <a href="#todo" data-tab="todo"><span class="tab-icon">✓</span>할일</a>
     <a href="#schedule" data-tab="schedule"><span class="tab-icon">📅</span>스케줄</a>
   </nav>
@@ -168,6 +178,26 @@
         <input id="range-end" type="date">
       </div>
       <button type="submit" id="range-apply" class="btn primary wide">이 기간으로 보기</button>
+    </form>
+  </div>
+</div>
+
+<!-- 고정비 시트 -->
+<div id="sheet-fixed" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <form id="fixed-form">
+      <input type="hidden" id="fixed-id">
+      <input id="fixed-name" type="text" placeholder="항목 이름 (예: 월세, 통신비)" maxlength="40" required>
+      <label class="amount-field">
+        <span class="won">₩</span>
+        <input id="fixed-amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off">
+      </label>
+      <input id="fixed-memo" type="text" placeholder="메모 (선택, 예: 매월 25일)" maxlength="80">
+      <div class="row actions">
+        <button type="button" id="fixed-delete" class="btn danger" hidden>삭제</button>
+        <button type="submit" id="fixed-save" class="btn primary grow" disabled>저장</button>
+      </div>
     </form>
   </div>
 </div>
@@ -245,6 +275,7 @@
     </section>
 
     <button id="btn-logout" class="btn wide">로그아웃</button>
+    <p class="version" id="app-version"></p>
   </main>
 </div>
 
