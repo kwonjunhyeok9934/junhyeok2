@@ -233,7 +233,41 @@ begin
   end if;
 end $$;
 
--- 18. 확인용 ---------------------------------------------------------------------
+-- 19. 알림 웹훅 트리거 (Edge Function 으로 전송) ------------------------------------
+-- <함수주소>, <WEBHOOK_SECRET> 은 본인 값으로 바꿔 실행한다.
+-- INSERT: transactions / todos / events → 기록한 사람 빼고 알림
+-- UPDATE: todos 담당자(assignee) 변경 → 새 담당자에게만 알림
+
+create extension if not exists pg_net;
+
+create or replace function notify_webhook() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform net.http_post(
+    url := '<함수주소>',
+    headers := '{"Content-Type":"application/json","x-webhook-secret":"<WEBHOOK_SECRET>"}'::jsonb,
+    body := jsonb_build_object(
+      'type', TG_OP,
+      'table', TG_TABLE_NAME,
+      'record', to_jsonb(NEW),
+      'old_record', case when TG_OP = 'UPDATE' then to_jsonb(OLD) end,
+      'actor', auth.uid()
+    )
+  );
+  return NEW;
+end $$;
+
+drop trigger if exists notify_transactions on transactions;
+create trigger notify_transactions after insert on transactions for each row execute function notify_webhook();
+drop trigger if exists notify_todos on todos;
+create trigger notify_todos after insert on todos for each row execute function notify_webhook();
+drop trigger if exists notify_events on events;
+create trigger notify_events after insert on events for each row execute function notify_webhook();
+drop trigger if exists notify_todos_assign on todos;
+create trigger notify_todos_assign after update of assignee on todos
+  for each row when (new.assignee is distinct from old.assignee) execute function notify_webhook();
+
+-- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
 union all select 'categories', count(*) from categories

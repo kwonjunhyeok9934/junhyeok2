@@ -24,6 +24,15 @@ async function nameOf(userId: string | null) {
   return data?.name ?? '누군가';
 }
 
+const fmtDate = (d: string) => { const [, m, dd] = d.split('-').map(Number); return `${m}/${dd}`; };
+
+// 할일 담당자가 바뀌었을 때 → 새 담당자에게만
+async function messageForAssign(r: Record<string, any>, actor: string | null) {
+  if (!r.assignee || r.assignee === actor) return null;
+  const who = await nameOf(actor);
+  return { title: `${who}님이 할일을 맡겼어요`, body: `${r.title}${r.due ? ` (마감 ${fmtDate(r.due)})` : ''}`, url: './#todo', exclude: null, only: r.assignee, tag: `todo-${r.id}` };
+}
+
 // 웹훅 페이로드 → { title, body, url, exclude }
 async function messageForInsert(table: string, r: Record<string, any>) {
   const who = await nameOf(r.created_by);
@@ -37,6 +46,8 @@ async function messageForInsert(table: string, r: Record<string, any>) {
     return { title: `${who}님이 가계부에 기록했어요`, body: `${cat} ${sign}${won(r.amount)}원${r.memo ? ` · ${r.memo}` : ''}`, url: './#ledger', exclude: r.created_by };
   }
   if (table === 'todos') {
+    // 처음부터 담당자를 정해 넣은 경우 담당자에게만
+    if (r.assignee && r.assignee !== r.created_by) return messageForAssign(r, r.created_by);
     return { title: `${who}님이 할일을 추가했어요`, body: r.title, url: './#todo', exclude: r.created_by };
   }
   if (table === 'events') {
@@ -62,9 +73,10 @@ async function messageForDaily() {
   return { title: '오늘의 우리집', body: parts.join(' · '), url: './#home', exclude: null, tag: 'daily' };
 }
 
-async function send(msg: { title: string; body: string; url: string; exclude: string | null; tag?: string }) {
+async function send(msg: { title: string; body: string; url: string; exclude: string | null; only?: string | null; tag?: string }) {
   let q = sb.from('push_subscriptions').select('*');
-  if (msg.exclude) q = q.neq('user_id', msg.exclude);
+  if (msg.only) q = q.eq('user_id', msg.only);
+  else if (msg.exclude) q = q.neq('user_id', msg.exclude);
   const { data: subs } = await q;
   const payload = JSON.stringify({ title: msg.title, body: msg.body, url: msg.url, tag: msg.tag ?? 'couple' });
   let sent = 0;
@@ -91,6 +103,10 @@ Deno.serve(async (req) => {
   let msg = null;
   if (body.kind === 'daily') msg = await messageForDaily();
   else if (body.type === 'INSERT' && body.record) msg = await messageForInsert(body.table, body.record);
+  else if (body.type === 'UPDATE' && body.table === 'todos' && body.record) {
+    const changed = body.old_record ? body.record.assignee !== body.old_record.assignee : true;
+    if (changed) msg = await messageForAssign(body.record, body.actor ?? null);
+  }
   if (!msg) return Response.json({ sent: 0, skipped: true });
   const sent = await send(msg);
   return Response.json({ sent });

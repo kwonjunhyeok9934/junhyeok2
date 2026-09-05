@@ -9,7 +9,7 @@ import * as home from './home.js';
 import * as push from './push.js';
 import * as anniv from './anniv.js';
 
-const APP_VERSION = 'v15'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v16'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
