@@ -94,14 +94,12 @@ input:focus { outline: 0; box-shadow: 0 0 0 2px var(--accent); background: var(-
 /* ---- 스플래시 ---- */
 #splash {
   position: fixed; inset: 0; z-index: 100; background: var(--accent);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
-  color: #fff; transition: opacity .45s ease, visibility .45s;
+  display: flex; align-items: center; justify-content: center;
+  transition: background-color .55s ease .15s, visibility 0s .7s;
 }
-#splash.out { opacity: 0; visibility: hidden; pointer-events: none; }
-#splash .logo { width: 92px; height: 92px; animation: logoIn .7s var(--spring) both; }
-#splash .logo circle { fill: none; stroke: #fff; stroke-width: 9; }
-#splash .name { font-size: 22px; font-weight: 700; letter-spacing: -.02em; opacity: 0; animation: riseIn .5s .35s var(--spring) both; }
-#splash .sub { font-size: 13px; opacity: 0; animation: riseIn .5s .5s var(--spring) both; color: rgba(255,255,255,.75); }
+#splash .logo { width: 96px; height: 96px; fill: #fff; animation: logoIn .55s var(--spring) both; transition: transform .7s cubic-bezier(.7, 0, .84, 0), opacity .35s ease .35s; }
+#splash.out { background-color: transparent; visibility: hidden; pointer-events: none; }
+#splash.out .logo { transform: scale(40); opacity: 0; }
 
 /* ---- 로그인 ---- */
 .center-box {
@@ -112,7 +110,7 @@ input:focus { outline: 0; box-shadow: 0 0 0 2px var(--accent); background: var(-
 .center-box label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
 .center-box input { background: var(--card); box-shadow: var(--shadow); }
 .brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 8px; animation: riseIn .45s var(--spring) both; }
-.brand svg { width: 64px; height: 64px; } .brand svg circle { fill: none; stroke: var(--accent); stroke-width: 9; }
+.brand svg { width: 64px; height: 64px; fill: var(--accent); }
 .brand h1 { font-size: 24px; letter-spacing: -.02em; }
 .brand p { margin: 0; color: var(--muted); font-size: 14px; }
 
@@ -150,6 +148,10 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .tabbar a.active .tab-icon { transform: translateY(-1px) scale(1.08); }
 
 /* ---- 가계부 ---- */
+.range-row { display: flex; justify-content: center; margin: -6px 0 12px; }
+.pill { border: 0; background: var(--card); color: var(--text-2); border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600; box-shadow: var(--shadow); cursor: pointer; }
+.pill.active { background: var(--accent-soft); color: var(--accent); }
+.muted { color: var(--muted); }
 .month-nav {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   font-weight: 700; font-size: 18px; margin: 4px 0 14px; letter-spacing: -.02em;
@@ -310,7 +312,7 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes popIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
 @keyframes pop { 0% { transform: scale(.85); } 60% { transform: scale(1.08); } 100% { transform: none; } }
-@keyframes logoIn { from { opacity: 0; transform: scale(.7) rotate(-12deg); } to { opacity: 1; transform: none; } }
+@keyframes logoIn { from { opacity: 0; transform: scale(.55) translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes slideInRight { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 @keyframes shake { 0%,100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }

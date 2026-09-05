@@ -15,11 +15,9 @@
 </head>
 <body>
 
-<!-- 시작 스플래시 -->
+<!-- 시작 스플래시: 집이 떠오른 뒤 커지며 앱으로 이어진다 -->
 <div id="splash" aria-hidden="true">
-  <svg class="logo" viewBox="0 0 100 100"><circle cx="37" cy="50" r="22"/><circle cx="63" cy="50" r="22"/></svg>
-  <div class="name">우리집</div>
-  <div class="sub">가계부 · 할일 · 스케줄</div>
+  <svg class="logo" viewBox="0 0 100 100"><path d="M50 20 L13 52 H24 V82 H43 V60 H57 V82 H76 V52 H87 Z"/></svg>
 </div>
 
 <!-- Supabase 설정이 비어 있을 때 -->
@@ -31,7 +29,7 @@
 <!-- 로그인 -->
 <section id="view-login" class="center-box" hidden>
   <div class="brand">
-    <svg viewBox="0 0 100 100"><circle cx="37" cy="50" r="22"/><circle cx="63" cy="50" r="22"/></svg>
+    <svg viewBox="0 0 100 100"><path d="M50 20 L13 52 H24 V82 H43 V60 H57 V82 H76 V52 H87 Z"/></svg>
     <h1>우리집</h1>
     <p>둘이 함께 쓰는 가계부 · 할일 · 스케줄</p>
   </div>
@@ -61,6 +59,7 @@
         <span id="month-label"></span>
         <button id="month-next" class="icon-btn" aria-label="다음 달">▶</button>
       </div>
+      <div class="range-row"><button type="button" id="range-btn" class="pill">1개월 ▾</button></div>
 
       <div class="summary">
         <div class="sum-item"><span class="sum-label">수입</span><strong id="sum-income" class="income">0</strong></div>
@@ -146,6 +145,29 @@
         <button type="button" id="tx-delete" class="btn danger" hidden>삭제</button>
         <button type="submit" id="tx-save" class="btn primary grow" disabled>저장</button>
       </div>
+    </form>
+  </div>
+</div>
+
+<!-- 조회 기간 시트 -->
+<div id="sheet-range" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <form id="range-form">
+      <div class="field-label">조회 기간</div>
+      <div id="range-presets" class="chips">
+        <button type="button" class="chip" data-span="1">1개월</button>
+        <button type="button" class="chip" data-span="3">3개월</button>
+        <button type="button" class="chip" data-span="6">6개월</button>
+        <button type="button" class="chip" data-span="12">1년</button>
+      </div>
+      <div class="field-label" style="margin-top:6px">직접 지정</div>
+      <div class="row">
+        <input id="range-start" type="date">
+        <span class="muted">~</span>
+        <input id="range-end" type="date">
+      </div>
+      <button type="submit" id="range-apply" class="btn primary wide">이 기간으로 보기</button>
     </form>
   </div>
 </div>

@@ -1,6 +1,6 @@
 // 진입점: 설정 확인 → 세션 → 화면 전환, 해시 탭, 실시간 구독, 설정 화면.
 import { isConfigured, sb, getSession, signIn, signOut, onAuthChange } from './supabase.js';
-import { $, toast, haptic } from './ui.js';
+import { $, toast, haptic, closeSheet } from './ui.js';
 import * as ledger from './ledger.js';
 import * as todo from './todo.js';
 import * as schedule from './schedule.js';
@@ -33,11 +33,11 @@ let splashHidden = false;
 function hideSplash() {
   if (splashHidden) return;
   splashHidden = true;
-  const wait = Math.max(0, 900 - (performance.now() - splashStart));
+  const wait = Math.max(0, 700 - (performance.now() - splashStart));
   setTimeout(() => {
     const el = $('#splash');
     el.classList.add('out');
-    setTimeout(() => el.remove(), 500);
+    setTimeout(() => el.remove(), 900);
   }, wait);
 }
 
@@ -151,6 +151,15 @@ function subscribeRealtime() {
 
 function bindTabs() {
   window.addEventListener('hashchange', routeHash);
+  // 탭 이동은 히스토리에 쌓지 않는다 (뒤로가기가 탭을 되감지 않게).
+  document.querySelectorAll('.tabbar a').forEach((a) =>
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      history.replaceState(history.state, '', a.getAttribute('href'));
+      routeHash();
+    }),
+  );
+  setupBackGuard();
   $('#btn-add').addEventListener('click', () => {
     if (currentTab() === 'schedule') schedule.openNew();
     else ledger.openNew();
@@ -163,6 +172,7 @@ function currentTab() {
 }
 
 function routeHash() {
+  lastHash = location.hash;
   const tab = currentTab();
   for (const [k, t] of Object.entries(TABS)) {
     const wasHidden = t.el.hidden;
@@ -178,6 +188,42 @@ function routeHash() {
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));
   $('#page-title').textContent = TABS[tab].title;
   $('#btn-add').hidden = tab === 'todo';
+}
+
+// ---- 뒤로가기: 열린 것 닫기 → 두 번 눌러 종료 ----------------------------------
+
+let exitArmed = 0;
+let lastHash = location.hash;
+function setupBackGuard() {
+  history.pushState({ guard: true }, '', location.href);
+  window.addEventListener('popstate', () => {
+    // 주소의 # 만 바뀐 것은 탭 이동이다. 가드만 유지하고 넘어간다.
+    if (location.hash !== lastHash) {
+      lastHash = location.hash;
+      if (!history.state?.guard) history.pushState({ guard: true }, '', location.href);
+      return;
+    }
+    // 항상 가드 항목을 다시 올려 둔다. 진짜 종료는 아래에서 history.back() 으로.
+    const openSheetEl = document.querySelector('.sheet.open');
+    if (openSheetEl) {
+      closeSheet(openSheetEl);
+      history.pushState({ guard: true }, '', location.href);
+      return;
+    }
+    if (!view.settings.hidden) {
+      view.settings.hidden = true;
+      ledger.refresh();
+      history.pushState({ guard: true }, '', location.href);
+      return;
+    }
+    if (Date.now() - exitArmed < 2000) {
+      history.back(); // 가드 아래로 내려가 앱이 닫힌다
+      return;
+    }
+    exitArmed = Date.now();
+    toast('한 번 더 누르면 종료돼요');
+    history.pushState({ guard: true }, '', location.href);
+  });
 }
 
 // ---- 설정 -----------------------------------------------------------------

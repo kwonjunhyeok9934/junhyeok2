@@ -137,3 +137,22 @@ export function groupEventsByDate(events) {
 export function formatTime(t) {
   return t ? String(t).slice(0, 5) : '종일';
 }
+
+// ---- 조회 기간 ---------------------------------------------------------------
+
+// year/month 를 끝 달로 하는 span 개월 범위. span=1 이면 monthRange 와 같다.
+export function spanRange(year, month, span) {
+  const first = shiftMonth(year, month, -(span - 1));
+  return { start: monthRange(first.year, first.month).start, end: monthRange(year, month).end };
+}
+
+// 범위 라벨. 한 달이면 "2026년 9월", 여러 달이면 "2026년 7월 ~ 9월" / "2025년 10월 ~ 2026년 9월",
+// 직접 지정이면 "2026.07.01 ~ 2026.09.15".
+export function rangeLabel(start, end, custom = false) {
+  if (custom) return `${start.replaceAll('-', '.')} ~ ${end.replaceAll('-', '.')}`;
+  const [sy, sm] = start.split('-').map(Number);
+  const [ey, em] = end.split('-').map(Number);
+  if (sy === ey && sm === em) return monthLabel(ey, em);
+  if (sy === ey) return `${sy}년 ${sm}월 ~ ${em}월`;
+  return `${monthLabel(sy, sm)} ~ ${monthLabel(ey, em)}`;
+}

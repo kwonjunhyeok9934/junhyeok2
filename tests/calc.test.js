@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   monthRange, shiftMonth, monthLabel, summarize, sumByCategory,
   groupByDate, formatWon, parseWon, dueLabel, sortTodos,
-  calendarGrid, groupEventsByDate, formatTime,
+  calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -116,4 +116,17 @@ test('formatTime', () => {
   assert.equal(formatTime('14:30:00'), '14:30');
   assert.equal(formatTime('09:05'), '09:05');
   assert.equal(formatTime(null), '종일');
+});
+
+test('spanRange: 끝 달 기준 N개월', () => {
+  assert.deepEqual(spanRange(2026, 9, 1), { start: '2026-09-01', end: '2026-09-30' });
+  assert.deepEqual(spanRange(2026, 9, 3), { start: '2026-07-01', end: '2026-09-30' });
+  assert.deepEqual(spanRange(2026, 2, 12), { start: '2025-03-01', end: '2026-02-28' });
+});
+
+test('rangeLabel', () => {
+  assert.equal(rangeLabel('2026-09-01', '2026-09-30'), '2026년 9월');
+  assert.equal(rangeLabel('2026-07-01', '2026-09-30'), '2026년 7월 ~ 9월');
+  assert.equal(rangeLabel('2025-10-01', '2026-09-30'), '2025년 10월 ~ 2026년 9월');
+  assert.equal(rangeLabel('2026-07-01', '2026-09-15', true), '2026.07.01 ~ 2026.09.15');
 });
