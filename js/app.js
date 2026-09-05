@@ -3,6 +3,7 @@ import { isConfigured, sb, getSession, signIn, signOut, onAuthChange } from './s
 import { $, toast } from './ui.js';
 import * as ledger from './ledger.js';
 import * as todo from './todo.js';
+import * as schedule from './schedule.js';
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -95,9 +96,11 @@ function enterMain(user) {
   show('main');
   ledger.init({ userId: user.id });
   todo.init({ userId: user.id });
+  schedule.init({ userId: user.id });
   routeHash();
   ledger.refresh();
   todo.refresh();
+  schedule.refresh();
   subscribeRealtime();
   document.addEventListener('visibilitychange', onVisible);
 }
@@ -115,6 +118,7 @@ function onVisible() {
   if (document.visibilityState !== 'visible') return;
   ledger.refresh();
   todo.refresh();
+  schedule.refresh();
 }
 
 function subscribeRealtime() {
@@ -124,6 +128,7 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => ledger.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => ledger.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => todo.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => schedule.refresh())
     .subscribe();
 }
 
@@ -131,15 +136,23 @@ function subscribeRealtime() {
 
 function bindTabs() {
   window.addEventListener('hashchange', routeHash);
+  $('#btn-add').addEventListener('click', () => {
+    if (currentTab() === 'schedule') schedule.openNew();
+    else ledger.openNew();
+  });
+}
+
+function currentTab() {
+  const name = location.hash.replace('#', '') || 'ledger';
+  return TABS[name] ? name : 'ledger';
 }
 
 function routeHash() {
-  const name = location.hash.replace('#', '') || 'ledger';
-  const tab = TABS[name] ? name : 'ledger';
+  const tab = currentTab();
   for (const [k, t] of Object.entries(TABS)) t.el.hidden = k !== tab;
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));
   $('#page-title').textContent = TABS[tab].title;
-  $('#btn-add').hidden = tab !== 'ledger';
+  $('#btn-add').hidden = tab === 'todo';
 }
 
 // ---- 설정 -----------------------------------------------------------------

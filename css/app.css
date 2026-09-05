@@ -240,3 +240,33 @@ main { padding: 12px 14px calc(var(--tabbar-h) + 84px); }
 #todo-done { margin-top: 14px; }
 #todo-done summary { cursor: pointer; font-weight: 600; color: var(--muted); font-size: 14px; }
 #todo-done-list { margin-top: 8px; }
+
+/* 스케줄 */
+.cal-head, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-head { font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 4px; }
+.cal-head .sun { color: var(--danger); } .cal-head .sat { color: var(--income); }
+.cal-grid { gap: 2px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px 4px; }
+.cal-cell {
+  border: 2px solid transparent; background: transparent; border-radius: 10px;
+  padding: 4px 0 2px; min-height: 46px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: 14px; cursor: pointer; color: var(--text);
+}
+.cal-cell.dim { color: var(--muted); opacity: .45; }
+.cal-cell.today { border-color: var(--accent); }
+.cal-cell.selected { background: var(--accent); color: #fff; }
+.cal-cell.selected .dots i { background: #fff !important; }
+.cal-cell .dots { display: flex; gap: 3px; height: 6px; }
+.cal-cell .dots i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+.day-label { margin: 14px 0 8px 2px; font-size: 14px; }
+.event-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
+}
+.event-row:active { background: var(--accent-soft); }
+.event-time { width: 44px; flex: none; font-weight: 600; font-size: 14px; }
+.event-time.allday { color: var(--muted); font-size: 12px; }
+.event-main { flex: 1; min-width: 0; }
+.event-memo { color: var(--muted); font-size: 13px; }
+.empty.small { padding: 20px 0; }
+#event-time { flex: 0 0 auto; width: auto; }

@@ -53,7 +53,6 @@ export function init({ userId }) {
 
   $('#month-prev').addEventListener('click', () => moveMonth(-1));
   $('#month-next').addEventListener('click', () => moveMonth(1));
-  $('#btn-add').addEventListener('click', () => openTxSheet(null));
   bindSheetBackdrop(el.sheet);
 
   el.form.querySelectorAll('input[name="kind"]').forEach((r) =>
@@ -195,6 +194,10 @@ function txRow(t, catName, profile) {
 }
 
 // ---- 입력 시트 ------------------------------------------------------------
+
+export function openNew() {
+  openTxSheet(null);
+}
 
 function openTxSheet(tx) {
   state.editing = tx ?? null;

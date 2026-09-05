@@ -126,9 +126,35 @@ begin
   end if;
 end $$;
 
--- 8. 확인용: 실행 결과에 표 4개와 카테고리 개수가 보이면 성공 -----------------
+-- 9. 스케줄 -------------------------------------------------------------------
+
+create table if not exists events (
+  id         bigint generated always as identity primary key,
+  title      text not null,
+  date       date not null,
+  time       time,
+  owner      uuid references auth.users(id) on delete set null,
+  memo       text not null default '',
+  created_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists events_date_idx on events (date);
+
+alter table events enable row level security;
+drop policy if exists "auth all" on events;
+create policy "auth all" on events for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'events') then
+    alter publication supabase_realtime add table events;
+  end if;
+end $$;
+
+-- 10. 확인용: 표 5개와 카테고리 개수가 보이면 성공 ------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
 union all select 'categories', count(*) from categories
 union all select 'transactions', count(*) from transactions
-union all select 'todos', count(*) from todos;
+union all select 'todos', count(*) from todos
+union all select 'events', count(*) from events;

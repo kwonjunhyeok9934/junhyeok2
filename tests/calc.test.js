@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   monthRange, shiftMonth, monthLabel, summarize, sumByCategory,
   groupByDate, formatWon, parseWon, dueLabel, sortTodos,
+  calendarGrid, groupEventsByDate, formatTime,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -84,4 +85,35 @@ test('sortTodos: 마감 있는 것 먼저, 완료는 최신순', () => {
   const { open, done } = sortTodos(todos);
   assert.deepEqual(open.map(t => t.id), [4, 2, 5, 1]);
   assert.deepEqual(done.map(t => t.id), [6, 3]);
+});
+
+test('calendarGrid: 42칸, 일요일 시작, 이번 달 표시', () => {
+  const g = calendarGrid(2026, 9); // 2026-09-01 은 화요일
+  assert.equal(g.length, 42);
+  assert.equal(g[0].date, '2026-08-30');
+  assert.equal(g[0].inMonth, false);
+  assert.equal(g[2].date, '2026-09-01');
+  assert.equal(g[2].inMonth, true);
+  assert.equal(g[31].date, '2026-09-30');
+  assert.equal(g[32].inMonth, false);
+  assert.equal(g.filter(c => c.inMonth).length, 30);
+});
+
+test('groupEventsByDate: 종일 먼저, 시간순', () => {
+  const ev = [
+    { id: 1, date: '2026-09-05', time: '14:00:00', created_at: '1' },
+    { id: 2, date: '2026-09-05', time: null,       created_at: '2' },
+    { id: 3, date: '2026-09-05', time: '09:30:00', created_at: '3' },
+    { id: 4, date: '2026-09-06', time: null,       created_at: '4' },
+  ];
+  const m = groupEventsByDate(ev);
+  assert.deepEqual(m.get('2026-09-05').map(e => e.id), [2, 3, 1]);
+  assert.deepEqual(m.get('2026-09-06').map(e => e.id), [4]);
+  assert.equal(m.get('2026-09-07'), undefined);
+});
+
+test('formatTime', () => {
+  assert.equal(formatTime('14:30:00'), '14:30');
+  assert.equal(formatTime('09:05'), '09:05');
+  assert.equal(formatTime(null), '종일');
 });

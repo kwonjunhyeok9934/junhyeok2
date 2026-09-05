@@ -96,3 +96,44 @@ export function sortTodos(todos) {
   const done = todos.filter((t) => t.done).sort((a, b) => cmp(b.done_at ?? '', a.done_at ?? ''));
   return { open, done };
 }
+
+// ---- 스케줄 -----------------------------------------------------------------
+
+// 일요일 시작 6줄(42칸) 달력. 각 칸 { date, day, inMonth }.
+export function calendarGrid(year, month) {
+  const first = new Date(year, month - 1, 1);
+  const start = new Date(year, month - 1, 1 - first.getDay());
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    cells.push({
+      date: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+      day: d.getDate(),
+      inMonth: d.getMonth() === month - 1,
+    });
+  }
+  return cells;
+}
+
+// date → 그날 일정 목록(종일 먼저, 그 다음 시간순, 같으면 만든 순).
+export function groupEventsByDate(events) {
+  const map = new Map();
+  for (const e of events) {
+    if (!map.has(e.date)) map.set(e.date, []);
+    map.get(e.date).push(e);
+  }
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  for (const list of map.values()) {
+    list.sort((a, b) => {
+      if (!a.time && b.time) return -1;
+      if (a.time && !b.time) return 1;
+      return cmp(a.time ?? '', b.time ?? '') || cmp(a.created_at, b.created_at);
+    });
+  }
+  return map;
+}
+
+// 'HH:MM:SS' | 'HH:MM' | null → 'HH:MM' | '종일'
+export function formatTime(t) {
+  return t ? String(t).slice(0, 5) : '종일';
+}
