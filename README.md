@@ -1,4 +1,4 @@
-# 우리 가계부 (junhyeok2)
+# 우리집 (junhyeok2)
 
 두 사람이 함께 쓰는 모바일 웹앱(PWA). 가계부 · 할일 · 스케줄 세 탭.
 설계: `docs/superpowers/specs/2026-09-05-couple-ledger-design.md`

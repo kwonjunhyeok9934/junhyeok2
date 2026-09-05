@@ -1,6 +1,6 @@
 {
-  "name": "우리 가계부",
-  "short_name": "가계부",
+  "name": "우리집",
+  "short_name": "우리집",
   "start_url": "./#ledger",
   "scope": "./",
   "display": "standalone",
