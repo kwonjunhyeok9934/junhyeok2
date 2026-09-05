@@ -1,19 +1,19 @@
 -- 부부 앱 1차 스키마.
--- Supabase 대시보드 → SQL Editor 에 전체를 붙여 한 번 실행한다.
--- 다시 실행하면 "already exists" 오류가 나는 것이 정상이다 (이미 만들어졌다는 뜻).
+-- Supabase 대시보드 → SQL Editor 에 전체를 붙여 실행한다.
+-- 몇 번 실행해도 안전하다: 이미 있는 것은 건너뛰고, 없는 것만 만든다.
 --
--- 실행 후 반드시: Authentication → Sign In / Up → "Allow new users to sign up" 을 끈다.
+-- 실행 후 반드시: Authentication → Sign In / Providers → "Allow new users to sign up" 을 끈다.
 -- 이걸 끄지 않으면 누구나 계정을 만들어 들어올 수 있다.
 
 -- 1. 표 -----------------------------------------------------------------
 
-create table profiles (
+create table if not exists profiles (
   id    uuid primary key references auth.users(id) on delete cascade,
   name  text not null,
   color text not null default '#3b82f6'
 );
 
-create table categories (
+create table if not exists categories (
   id         bigint generated always as identity primary key,
   name       text not null,
   kind       text not null check (kind in ('expense', 'income')),
@@ -21,7 +21,7 @@ create table categories (
   created_at timestamptz not null default now()
 );
 
-create table transactions (
+create table if not exists transactions (
   id          bigint generated always as identity primary key,
   kind        text not null check (kind in ('expense', 'income')),
   amount      integer not null check (amount > 0),
@@ -32,13 +32,17 @@ create table transactions (
   created_at  timestamptz not null default now()
 );
 
-create index transactions_date_idx on transactions (date);
+create index if not exists transactions_date_idx on transactions (date);
 
 -- 2. 접근 제어: 로그인한 사용자는 모든 행을 읽고 쓸 수 있다 ------------------
 
 alter table profiles     enable row level security;
 alter table categories   enable row level security;
 alter table transactions enable row level security;
+
+drop policy if exists "auth all" on profiles;
+drop policy if exists "auth all" on categories;
+drop policy if exists "auth all" on transactions;
 
 create policy "auth all" on profiles     for all to authenticated using (true) with check (true);
 create policy "auth all" on categories   for all to authenticated using (true) with check (true);
@@ -50,21 +54,38 @@ create or replace function handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   insert into profiles (id, name)
-  values (new.id, coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)));
+  values (new.id, coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)))
+  on conflict (id) do nothing;
   return new;
 end $$;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function handle_new_user();
 
+-- 이미 만들어진 계정이 있으면 profiles 행을 채워 준다.
+insert into profiles (id, name)
+select u.id, coalesce(u.raw_user_meta_data->>'name', split_part(u.email, '@', 1))
+from auth.users u
+where not exists (select 1 from profiles p where p.id = u.id);
+
 -- 4. 실시간 -------------------------------------------------------------------
 
-alter publication supabase_realtime add table transactions, categories;
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'transactions') then
+    alter publication supabase_realtime add table transactions;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'categories') then
+    alter publication supabase_realtime add table categories;
+  end if;
+end $$;
 
--- 5. 기본 카테고리 (앱에서 언제든 바꿀 수 있다) ---------------------------------
+-- 5. 기본 카테고리: 카테고리가 하나도 없을 때만 넣는다 --------------------------
 
-insert into categories (name, kind, sort_order) values
+insert into categories (name, kind, sort_order)
+select * from (values
   ('식비',        'expense', 10),
   ('외식',        'expense', 20),
   ('카페',        'expense', 30),
@@ -77,4 +98,12 @@ insert into categories (name, kind, sort_order) values
   ('기타',        'expense', 100),
   ('월급',        'income',  10),
   ('용돈',        'income',  20),
-  ('기타',        'income',  30);
+  ('기타',        'income',  30)
+) as v(name, kind, sort_order)
+where not exists (select 1 from categories);
+
+-- 6. 확인용: 실행 결과에 표 3개와 카테고리 개수가 보이면 성공 -----------------
+
+select 'profiles' as table_name, count(*) as rows from profiles
+union all select 'categories', count(*) from categories
+union all select 'transactions', count(*) from transactions;
