@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   monthRange, shiftMonth, monthLabel, summarize, sumByCategory,
   groupByDate, formatWon, parseWon, dueLabel, sortTodos,
-  calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel,
+  calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -129,4 +129,29 @@ test('rangeLabel', () => {
   assert.equal(rangeLabel('2026-07-01', '2026-09-30'), '2026년 7월 ~ 9월');
   assert.equal(rangeLabel('2025-10-01', '2026-09-30'), '2025년 10월 ~ 2026년 9월');
   assert.equal(rangeLabel('2026-07-01', '2026-09-15', true), '2026.07.01 ~ 2026.09.15');
+});
+
+test('monthsBetween', () => {
+  assert.deepEqual(monthsBetween('2026-07-01', '2026-09-30'), ['2026-07', '2026-08', '2026-09']);
+  assert.deepEqual(monthsBetween('2025-11-15', '2026-01-03'), ['2025-11', '2025-12', '2026-01']);
+  assert.deepEqual(monthsBetween('2026-09-01', '2026-09-30'), ['2026-09']);
+});
+
+test('sumByMonth: 빈 달은 0', () => {
+  const t = [
+    { kind: 'expense', amount: 100, date: '2026-07-03' },
+    { kind: 'expense', amount: 250, date: '2026-09-10' },
+    { kind: 'income',  amount: 900, date: '2026-09-25' },
+  ];
+  assert.deepEqual(sumByMonth(t, '2026-07-01', '2026-09-30'), [
+    { ym: '2026-07', expense: 100, income: 0 },
+    { ym: '2026-08', expense: 0, income: 0 },
+    { ym: '2026-09', expense: 250, income: 900 },
+  ]);
+});
+
+test('shiftDay: 월·연 넘김', () => {
+  assert.equal(shiftDay('2026-09-30', 1), '2026-10-01');
+  assert.equal(shiftDay('2026-12-31', 1), '2027-01-01');
+  assert.equal(shiftDay('2026-03-01', -1), '2026-02-28');
 });

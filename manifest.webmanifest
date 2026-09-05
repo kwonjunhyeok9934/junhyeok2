@@ -1,7 +1,7 @@
 {
   "name": "우리집",
   "short_name": "우리집",
-  "start_url": "./#ledger",
+  "start_url": "./#home",
   "scope": "./",
   "display": "standalone",
   "background_color": "#3b82f6",

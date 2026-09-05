@@ -2,7 +2,7 @@
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
 import {
-  monthRange, shiftMonth, todayLocal, summarize, sumByCategory, groupByDate, formatWon, parseWon, spanRange, rangeLabel,
+  monthRange, shiftMonth, todayLocal, summarize, sumByCategory, groupByDate, formatWon, parseWon, spanRange, rangeLabel, sumByMonth,
 } from './calc.js';
 import { fetchCategories, addCategory } from './categories.js';
 
@@ -49,6 +49,8 @@ export function init({ userId }) {
     rangePresets: $('#range-presets'),
     rangeStart: $('#range-start'),
     rangeEnd: $('#range-end'),
+    chart: $('#month-chart'),
+    chartBars: $('#month-chart-bars'),
     sumIncome: $('#sum-income'),
     sumExpense: $('#sum-expense'),
     sumBalance: $('#sum-balance'),
@@ -219,6 +221,8 @@ function render() {
   animateNumber(el.sumExpense, sum.expense, formatWon);
   animateNumber(el.sumBalance, sum.balance, formatWon);
 
+  renderChart();
+
   const byCat = sumByCategory(state.txs, state.cats);
   el.catTotals.innerHTML = byCat.length
     ? byCat.map((c) => `<li><span>${escapeHtml(c.name)}</span><span>${formatWon(c.total)}</span></li>`).join('')
@@ -235,6 +239,27 @@ function render() {
       (g) => `
       <div class="date-head">${dateHead(g.date)}</div>
       ${g.items.map((t) => txRow(t, catName, i++)).join('')}`,
+    )
+    .join('');
+}
+
+// 조회 범위가 두 달 이상일 때만 월별 지출 막대를 보여준다.
+function renderChart() {
+  const { start, end } = currentRange();
+  const rows = sumByMonth(state.txs, start, end);
+  el.chart.hidden = rows.length < 2;
+  if (rows.length < 2) return;
+  const max = Math.max(1, ...rows.map((r) => r.expense));
+  const thisMonth = todayLocal().slice(0, 7);
+  const short = (n) => (n >= 10000 ? `${Math.round(n / 10000)}만` : n ? formatWon(n) : '');
+  el.chartBars.innerHTML = rows
+    .map(
+      (r) => `
+      <div class="bar ${r.ym === thisMonth ? 'cur' : ''}" title="${r.ym} ${formatWon(r.expense)}">
+        <span class="val">${short(r.expense)}</span>
+        <i style="--h:${Math.round((r.expense / max) * 100)}"></i>
+        <span class="lbl">${Number(r.ym.slice(5, 7))}월</span>
+      </div>`,
     )
     .join('');
 }

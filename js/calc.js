@@ -19,6 +19,13 @@ export function monthLabel(year, month) {
   return `${year}년 ${month}월`;
 }
 
+// 'YYYY-MM-DD' 에 며칠을 더한다.
+export function shiftDay(date, delta) {
+  const [y, m, d] = date.split('-').map(Number);
+  const t = new Date(y, m - 1, d + delta);
+  return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
+}
+
 export function todayLocal() {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -155,4 +162,32 @@ export function rangeLabel(start, end, custom = false) {
   if (sy === ey && sm === em) return monthLabel(ey, em);
   if (sy === ey) return `${sy}년 ${sm}월 ~ ${em}월`;
   return `${monthLabel(sy, sm)} ~ ${monthLabel(ey, em)}`;
+}
+
+// ---- 월별 비교 ---------------------------------------------------------------
+
+// start~end 사이 달을 'YYYY-MM' 로 순서대로.
+export function monthsBetween(start, end) {
+  const out = [];
+  let y = Number(start.slice(0, 4));
+  let m = Number(start.slice(5, 7));
+  const ey = Number(end.slice(0, 4));
+  const em = Number(end.slice(5, 7));
+  while (y < ey || (y === ey && m <= em)) {
+    out.push(`${y}-${pad2(m)}`);
+    ({ year: y, month: m } = shiftMonth(y, m, 1));
+  }
+  return out;
+}
+
+// 범위 안 달마다 { ym, expense, income }. 기록 없는 달은 0.
+export function sumByMonth(txs, start, end) {
+  const map = new Map(monthsBetween(start, end).map((ym) => [ym, { ym, expense: 0, income: 0 }]));
+  for (const t of txs) {
+    const row = map.get(t.date.slice(0, 7));
+    if (!row) continue;
+    if (t.kind === 'income') row.income += t.amount;
+    else row.expense += t.amount;
+  }
+  return [...map.values()];
 }

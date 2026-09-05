@@ -5,8 +5,9 @@ import * as ledger from './ledger.js';
 import * as todo from './todo.js';
 import * as schedule from './schedule.js';
 import * as fixed from './fixed.js';
+import * as home from './home.js';
 
-const APP_VERSION = 'v10'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v11'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -17,6 +18,7 @@ const view = {
 };
 
 const TABS = {
+  home: { title: '우리집', el: $('#tab-home') },
   ledger: { title: '가계부', el: $('#tab-ledger') },
   fixed: { title: '고정비', el: $('#tab-fixed') },
   todo: { title: '할일', el: $('#tab-todo') },
@@ -117,7 +119,9 @@ function enterMain(user) {
   todo.init({ userId: user.id });
   schedule.init({ userId: user.id });
   fixed.init();
+  home.init({ onGo: goTab });
   routeHash();
+  home.refresh();
   ledger.refresh();
   todo.refresh();
   schedule.refresh();
@@ -137,6 +141,7 @@ function leaveMain() {
 
 function onVisible() {
   if (document.visibilityState !== 'visible') return;
+  home.refresh();
   ledger.refresh();
   todo.refresh();
   schedule.refresh();
@@ -147,11 +152,11 @@ function subscribeRealtime() {
   if (channel) return;
   channel = sb
     .channel('db-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => ledger.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => { ledger.refresh(); home.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => ledger.refresh())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => todo.refresh())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => schedule.refresh())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => fixed.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => { todo.refresh(); home.refresh(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => { schedule.refresh(); home.refresh(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => { fixed.refresh(); home.refresh(); })
     .subscribe();
 }
 
@@ -172,13 +177,19 @@ function bindTabs() {
     const tab = currentTab();
     if (tab === 'schedule') schedule.openNew();
     else if (tab === 'fixed') fixed.openNew();
-    else ledger.openNew();
+    else ledger.openNew(); // 홈·가계부는 지출 입력
   });
 }
 
 function currentTab(hash = location.hash) {
-  const name = hash.replace('#', '') || 'ledger';
-  return TABS[name] ? name : 'ledger';
+  const name = hash.replace('#', '') || 'home';
+  return TABS[name] ? name : 'home';
+}
+
+// 코드에서 탭을 바꿀 때 (홈 카드 등). 히스토리에 쌓지 않는다.
+function goTab(name) {
+  history.replaceState(history.state, '', '#' + name);
+  routeHash();
 }
 
 function routeHash() {
@@ -246,8 +257,30 @@ function setupBackGuard() {
 
 // ---- 설정 -----------------------------------------------------------------
 
+function applyTheme(theme) {
+  if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+  const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#101214' : '#3182f6';
+}
+
+function bindTheme() {
+  let theme = 'system';
+  try { theme = localStorage.getItem('theme') || 'system'; } catch { /* 무시 */ }
+  applyTheme(theme);
+  const input = document.querySelector(`#theme-seg input[value="${theme}"]`);
+  if (input) input.checked = true;
+  $('#theme-seg').addEventListener('change', (e) => {
+    const v = e.target.value;
+    try { localStorage.setItem('theme', v); } catch { /* 무시 */ }
+    applyTheme(v);
+    haptic(5);
+  });
+}
+
 function bindSettings() {
   $('#app-version').textContent = `우리집 ${APP_VERSION}`;
+  bindTheme();
   $('#btn-settings').addEventListener('click', openSettings);
   $('#settings-close').addEventListener('click', () => {
     view.settings.hidden = true;
