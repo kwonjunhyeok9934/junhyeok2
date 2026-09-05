@@ -49,22 +49,21 @@ export async function refresh() {
   const prevRange = monthRange(prev.year, prev.month);
   const prevSameDay = `${prevRange.start.slice(0, 7)}-${today.slice(8, 10)}`;
   try {
-    const [txs, prevTxs, todos, events, fixed, profiles] = await Promise.all([
+    const [txs, prevTxs, todos, events, profiles] = await Promise.all([
       sb.from('transactions').select('kind,amount,date').gte('date', start).lte('date', end).then(unwrap),
       sb.from('transactions').select('kind,amount').eq('kind', 'expense').gte('date', prevRange.start).lte('date', prevSameDay < prevRange.end ? prevSameDay : prevRange.end).then(unwrap),
       sb.from('todos').select('*').eq('done', false).then(unwrap),
       sb.from('events').select('*').gte('date', today).lte('date', tomorrow).order('created_at').then(unwrap),
-      sb.from('fixed_costs').select('amount,owner').then(unwrap),
       sb.from('profiles').select('id,name,color').then(unwrap),
     ]);
-    render({ today, tomorrow, txs, prevTxs, todos, events, fixed, profiles });
+    render({ today, tomorrow, txs, prevTxs, todos, events, profiles });
   } catch (err) {
     console.error(err);
     el.root.innerHTML = '<div class="retry">불러오지 못했어요<br><button type="button" class="btn small" onclick="location.reload()">다시 시도</button></div>';
   }
 }
 
-function render({ today, tomorrow, txs, prevTxs, todos, events, fixed, profiles }) {
+function render({ today, tomorrow, txs, prevTxs, todos, events, profiles }) {
   const sum = summarize(txs);
   const todayExpense = txs.filter((t) => t.kind === 'expense' && t.date === today).reduce((a, t) => a + t.amount, 0);
   const { open } = sortTodos(todos);
@@ -72,10 +71,6 @@ function render({ today, tomorrow, txs, prevTxs, todos, events, fixed, profiles 
   const todayEv = byDate.get(today) ?? [];
   const tomorrowEv = byDate.get(tomorrow) ?? [];
   const profile = new Map(profiles.map((p) => [p.id, p]));
-  const fixedTotal = fixed.reduce((a, x) => a + x.amount, 0);
-  const owners = [{ id: null, name: '공통' }, ...profiles].map((o) => ({
-    ...o, total: fixed.filter((x) => (x.owner ?? null) === o.id).reduce((a, x) => a + x.amount, 0),
-  }));
   const [y, m, d] = today.split('-').map(Number);
   const dow = ['일', '월', '화', '수', '목', '금', '토'][new Date(y, m - 1, d).getDay()];
   const hour = new Date().getHours();
@@ -109,7 +104,7 @@ function render({ today, tomorrow, txs, prevTxs, todos, events, fixed, profiles 
       <div class="hero-top"><span>${greet}</span><span class="hero-date">${m}월 ${d}일 ${dow}요일</span></div>
       <div class="hero-label">이번 달 지출</div>
       <div class="hero-amount"><span id="home-expense">0</span><small>원</small></div>
-      <div class="hero-sub">오늘 ${formatWon(todayExpense)}원${sum.income ? ` · 남은 돈 ${formatWon(sum.balance)}원` : ''}</div>
+      <div class="hero-sub">오늘 ${formatWon(todayExpense)}원 · 하루 평균 ${formatWon(Math.round(sum.expense / d))}원${sum.income ? ` · 남은 돈 ${formatWon(sum.balance)}원` : ''}</div>
       ${compare ? `<div class="hero-compare">${compare}</div>` : ''}
     </div>
 
@@ -131,20 +126,10 @@ function render({ today, tomorrow, txs, prevTxs, todos, events, fixed, profiles 
         ${open.length ? `<ul class="home-list">${open.slice(0, 3).map(todoRow).join('')}</ul>` : '<p class="home-empty">남은 할일이 없어요 ✨</p>'}
         ${open.length > 3 ? `<div class="home-sub">외 ${open.length - 3}개</div>` : ''}
       </div>
-    </div>
-
-    <div class="card home-card" data-go="fixed" style="--i:4">
-      <div class="tile orange">${ICON.fixed}</div>
-      <div class="home-body">
-        <h2>월 고정비</h2>
-        <strong id="home-fixed" class="big">0</strong>
-        <div class="home-sub">${owners.map((o) => `${escapeHtml(o.name)} ${formatWon(o.total)}`).join(' · ')}</div>
-      </div>
     </div>`;
 
   animateNumber($('#home-expense'), sum.expense, formatWon);
   renderWeather();
-  animateNumber($('#home-fixed'), fixedTotal, formatWon);
 }
 
 function weatherPlaceholder() {

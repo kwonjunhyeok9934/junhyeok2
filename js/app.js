@@ -8,7 +8,7 @@ import * as fixed from './fixed.js';
 import * as home from './home.js';
 import * as push from './push.js';
 
-const APP_VERSION = 'v13'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v14'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -113,9 +113,15 @@ function loginErrorText(e) {
 
 // ---- 메인 -----------------------------------------------------------------
 
+let firstEnter = true;
 function enterMain(user) {
   currentUser = user;
   show('main');
+  if (firstEnter) {
+    // 앱을 켤 때는 어느 주소로 들어왔든 홈부터 보여준다.
+    firstEnter = false;
+    history.replaceState(history.state, '', '#home');
+  }
   ledger.init({ userId: user.id });
   todo.init({ userId: user.id });
   schedule.init({ userId: user.id });
@@ -157,7 +163,7 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => ledger.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => { todo.refresh(); home.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => { schedule.refresh(); home.refresh(); })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => { fixed.refresh(); home.refresh(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => fixed.refresh())
     .subscribe();
 }
 
