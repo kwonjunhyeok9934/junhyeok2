@@ -7,8 +7,9 @@ import * as schedule from './schedule.js';
 import * as fixed from './fixed.js';
 import * as home from './home.js';
 import * as push from './push.js';
+import * as anniv from './anniv.js';
 
-const APP_VERSION = 'v14'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v15'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -164,6 +165,7 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => { todo.refresh(); home.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => { schedule.refresh(); home.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => fixed.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'anniversaries' }, () => home.refresh())
     .subscribe();
 }
 
@@ -293,6 +295,7 @@ function bindSettings() {
   $('#settings-close').addEventListener('click', () => {
     view.settings.hidden = true;
     ledger.refresh();
+    home.refresh();
   });
   $('#btn-logout').addEventListener('click', async () => {
     view.settings.hidden = true;
@@ -353,6 +356,7 @@ async function openSettings() {
   renderPush();
   const { data } = await sb.from('profiles').select('name').eq('id', currentUser.id).maybeSingle();
   $('#my-name').value = data?.name ?? '';
+  anniv.renderManager($('#anniv-manage'));
   await renderCats();
 }
 

@@ -415,6 +415,20 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .grade.bad   { background: #ffedd5; color: #c2410c; }
 .grade.worst { background: #fee2e2; color: #b91c1c; }
 
+.tile.pink { background: #fce7f3; color: #db2777; font-size: 22px; }
+:root[data-theme="dark"] .tile.pink { background: #3f1d2e; color: #f9a8d4; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tile.pink { background: #3f1d2e; color: #f9a8d4; } }
+.dday { cursor: default; }
+.dday:active { background: var(--card); }
+.dday-main { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.dday-main strong { font-size: 26px; font-weight: 800; letter-spacing: -.03em; color: #db2777; font-variant-numeric: tabular-nums; }
+.dday.today { background: linear-gradient(135deg, #fdf2f8, #fce7f3); }
+:root[data-theme="dark"] .dday.today { background: linear-gradient(135deg, #2a1622, #3f1d2e); }
+.anniv-form { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.check { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+.check input { width: 16px; height: 16px; accent-color: var(--accent); }
+.cat-item small { color: var(--muted); font-weight: 400; margin-left: 4px; }
+
 /* ---- 월별 비교 ---- */
 .chart-card { margin-bottom: 10px; }
 .bars { display: flex; align-items: flex-end; gap: 6px; height: 120px; padding-top: 18px; }

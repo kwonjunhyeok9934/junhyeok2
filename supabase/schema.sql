@@ -211,7 +211,29 @@ alter table push_subscriptions enable row level security;
 drop policy if exists "auth all" on push_subscriptions;
 create policy "auth all" on push_subscriptions for all to authenticated using (true) with check (true);
 
--- 16. 확인용 ---------------------------------------------------------------------
+-- 17. 기념일 ---------------------------------------------------------------------
+
+create table if not exists anniversaries (
+  id         bigint generated always as identity primary key,
+  title      text not null,
+  date       date not null,
+  emoji      text not null default '',
+  repeat     boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table anniversaries enable row level security;
+drop policy if exists "auth all" on anniversaries;
+create policy "auth all" on anniversaries for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'anniversaries') then
+    alter publication supabase_realtime add table anniversaries;
+  end if;
+end $$;
+
+-- 18. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
 union all select 'categories', count(*) from categories
@@ -219,4 +241,5 @@ union all select 'transactions', count(*) from transactions
 union all select 'todos', count(*) from todos
 union all select 'events', count(*) from events
 union all select 'fixed_costs', count(*) from fixed_costs
-union all select 'push_subscriptions', count(*) from push_subscriptions;
+union all select 'push_subscriptions', count(*) from push_subscriptions
+union all select 'anniversaries', count(*) from anniversaries;

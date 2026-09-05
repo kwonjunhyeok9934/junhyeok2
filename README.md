@@ -45,6 +45,7 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 | `js/fixed.js` | 고정비 탭 (항목 목록·합계·시트) |
 | `js/home.js` | 홈 탭 (이번 달 지출·오늘 일정·할일·고정비 요약) |
 | `js/push.js` | 알림 구독 켜기/끄기 |
+| `js/anniv.js` | 기념일 등록·삭제, 홈 D-day |
 | `js/weather.js` | 오늘 날씨·미세먼지 (Open-Meteo, 위치는 폰에만 저장) |
 | `supabase/functions/notify/index.ts` | 알림 발송 Edge Function (웹훅·아침 요약) |
 

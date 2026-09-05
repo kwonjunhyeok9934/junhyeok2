@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   monthRange, shiftMonth, monthLabel, summarize, sumByCategory,
   groupByDate, formatWon, parseWon, dueLabel, sortTodos,
-  calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay,
+  calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -154,4 +154,17 @@ test('shiftDay: 월·연 넘김', () => {
   assert.equal(shiftDay('2026-09-30', 1), '2026-10-01');
   assert.equal(shiftDay('2026-12-31', 1), '2027-01-01');
   assert.equal(shiftDay('2026-03-01', -1), '2026-02-28');
+});
+
+test('nextOccurrence: 반복 기념일', () => {
+  const t = '2026-09-05';
+  assert.deepEqual(nextOccurrence('2023-05-20', t, true), { date: '2027-05-20', days: 257, years: 4, together: 1205 });
+  assert.deepEqual(nextOccurrence('2023-09-05', t, true), { date: '2026-09-05', days: 0, years: 3, together: 1097 });
+  assert.deepEqual(nextOccurrence('1994-10-01', t, true), { date: '2026-10-01', days: 26, years: 32, together: 11663 });
+  assert.equal(nextOccurrence('2027-01-01', t, true).years, 0);
+});
+
+test('nextOccurrence: 한 번짜리', () => {
+  assert.deepEqual(nextOccurrence('2026-12-24', '2026-09-05', false), { date: '2026-12-24', days: 110, years: 0, together: 0 });
+  assert.equal(nextOccurrence('2026-01-01', '2026-09-05', false), null);
 });

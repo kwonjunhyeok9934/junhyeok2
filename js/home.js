@@ -2,6 +2,7 @@
 import { sb } from './supabase.js';
 import { $, escapeHtml, animateNumber, toast } from './ui.js';
 import { getWeather, hasLocation, requestLocation, pm10Grade, pm25Grade } from './weather.js';
+import { fetchAll as fetchAnniversaries, upcoming, dLabel } from './anniv.js';
 import { monthRange, shiftMonth, todayLocal, shiftDay, summarize, sortTodos, dueLabel, groupEventsByDate, formatTime, formatWon } from './calc.js';
 
 let el = null;
@@ -49,21 +50,22 @@ export async function refresh() {
   const prevRange = monthRange(prev.year, prev.month);
   const prevSameDay = `${prevRange.start.slice(0, 7)}-${today.slice(8, 10)}`;
   try {
-    const [txs, prevTxs, todos, events, profiles] = await Promise.all([
+    const [txs, prevTxs, todos, events, profiles, annivs] = await Promise.all([
       sb.from('transactions').select('kind,amount,date').gte('date', start).lte('date', end).then(unwrap),
       sb.from('transactions').select('kind,amount').eq('kind', 'expense').gte('date', prevRange.start).lte('date', prevSameDay < prevRange.end ? prevSameDay : prevRange.end).then(unwrap),
       sb.from('todos').select('*').eq('done', false).then(unwrap),
       sb.from('events').select('*').gte('date', today).lte('date', tomorrow).order('created_at').then(unwrap),
       sb.from('profiles').select('id,name,color').then(unwrap),
+      fetchAnniversaries().catch(() => []), // 표가 아직 없으면 조용히 비움
     ]);
-    render({ today, tomorrow, txs, prevTxs, todos, events, profiles });
+    render({ today, tomorrow, txs, prevTxs, todos, events, profiles, annivs });
   } catch (err) {
     console.error(err);
     el.root.innerHTML = '<div class="retry">불러오지 못했어요<br><button type="button" class="btn small" onclick="location.reload()">다시 시도</button></div>';
   }
 }
 
-function render({ today, tomorrow, txs, prevTxs, todos, events, profiles }) {
+function render({ today, tomorrow, txs, prevTxs, todos, events, profiles, annivs }) {
   const sum = summarize(txs);
   const todayExpense = txs.filter((t) => t.kind === 'expense' && t.date === today).reduce((a, t) => a + t.amount, 0);
   const { open } = sortTodos(todos);
@@ -93,6 +95,20 @@ function render({ today, tomorrow, txs, prevTxs, todos, events, profiles }) {
     return `<li><span class="ring"></span><span class="grow">${escapeHtml(t.title)}</span>${due ? `<span class="due ${due.overdue ? 'overdue' : ''}">${due.text}</span>` : ''}</li>`;
   };
 
+  const dday = upcoming(annivs, today);
+  const first = dday[0];
+  const ddayCard = first
+    ? `<div class="card home-card dday ${first.next.days === 0 ? 'today' : ''}" style="--i:1">
+        <div class="tile pink">${first.emoji || '📌'}</div>
+        <div class="home-body">
+          <h2>${escapeHtml(first.title)} <span class="place">${Number(first.next.date.slice(5, 7))}월 ${Number(first.next.date.slice(8, 10))}일</span></h2>
+          <div class="dday-main"><strong>${dLabel(first.next.days)}</strong>
+            <span class="home-sub" style="margin:0">${first.repeat && first.next.years > 0 ? `${first.next.years}주년` : ''}${first.repeat && first.next.together > 0 ? ` · 함께 ${first.next.together.toLocaleString('en-US')}일째` : ''}</span></div>
+          ${dday[1] ? `<div class="home-sub">다음 · ${dday[1].emoji || ''} ${escapeHtml(dday[1].title)} ${dLabel(dday[1].next.days)}</div>` : ''}
+        </div>
+      </div>`
+    : '';
+
   const ICON = {
     schedule: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
     todo: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>',
@@ -108,9 +124,11 @@ function render({ today, tomorrow, txs, prevTxs, todos, events, profiles }) {
       ${compare ? `<div class="hero-compare">${compare}</div>` : ''}
     </div>
 
-    <div id="home-weather" class="card home-card weather" style="--i:1">${weatherPlaceholder()}</div>
+    ${ddayCard}
 
-    <div class="card home-card" data-go="schedule" style="--i:2">
+    <div id="home-weather" class="card home-card weather" style="--i:2">${weatherPlaceholder()}</div>
+
+    <div class="card home-card" data-go="schedule" style="--i:3">
       <div class="tile violet">${ICON.schedule}</div>
       <div class="home-body">
         <h2>오늘 일정 ${todayEv.length ? `<span class="count">${todayEv.length}</span>` : ''}</h2>
@@ -119,7 +137,7 @@ function render({ today, tomorrow, txs, prevTxs, todos, events, profiles }) {
       </div>
     </div>
 
-    <div class="card home-card" data-go="todo" style="--i:3">
+    <div class="card home-card" data-go="todo" style="--i:4">
       <div class="tile green">${ICON.todo}</div>
       <div class="home-body">
         <h2>해야 할 일 ${open.length ? `<span class="count">${open.length}</span>` : ''}</h2>

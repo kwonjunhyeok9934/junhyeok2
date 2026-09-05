@@ -191,3 +191,24 @@ export function sumByMonth(txs, start, end) {
   }
   return [...map.values()];
 }
+
+// ---- 기념일 -----------------------------------------------------------------
+
+// 다음 기념일. repeat 이면 올해/내년 중 가까운 날, 아니면 date 자체(지났으면 null).
+// { date, days(D-), years(몇 주년, 반복일 때), together(처음 날부터 며칠째) }
+export function nextOccurrence(date, today, repeat = true) {
+  const dayMs = 86400000;
+  const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / dayMs);
+  if (!repeat) {
+    const days = daysBetween(today, date);
+    return days < 0 ? null : { date, days, years: 0, together: 0 };
+  }
+  const [oy, om, od] = date.split('-').map(Number);
+  const ty = Number(today.slice(0, 4));
+  const mk = (y) => `${y}-${pad2(om)}-${pad2(od)}`;
+  let next = mk(ty);
+  if (next < today) next = mk(ty + 1);
+  const years = Number(next.slice(0, 4)) - oy;
+  const together = date <= today ? daysBetween(date, today) + 1 : 0;
+  return { date: next, days: daysBetween(today, next), years, together };
+}
