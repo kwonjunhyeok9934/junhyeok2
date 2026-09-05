@@ -8,7 +8,7 @@ import * as fixed from './fixed.js';
 import * as home from './home.js';
 import * as push from './push.js';
 
-const APP_VERSION = 'v12'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v13'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {

@@ -45,6 +45,7 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 | `js/fixed.js` | 고정비 탭 (항목 목록·합계·시트) |
 | `js/home.js` | 홈 탭 (이번 달 지출·오늘 일정·할일·고정비 요약) |
 | `js/push.js` | 알림 구독 켜기/끄기 |
+| `js/weather.js` | 오늘 날씨·미세먼지 (Open-Meteo, 위치는 폰에만 저장) |
 | `supabase/functions/notify/index.ts` | 알림 발송 Edge Function (웹훅·아침 요약) |
 
 동작 메모: 가계부 조회 기간(1·3·6·12개월·직접 지정)은 폰에 기억된다. 뒤로가기는 열린 시트·설정을 먼저 닫고, 없으면 두 번 눌러 종료한다.
