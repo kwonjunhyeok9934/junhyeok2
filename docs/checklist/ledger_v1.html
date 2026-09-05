@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>가계부 v1 체크리스트</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--text:#1f2937;--muted:#6b7280;--line:#e5e7eb;--accent:#3b82f6;--pass:#16a34a;--fail:#dc2626;--hold:#d97706}
+@media(prefers-color-scheme:dark){:root{--bg:#111318;--card:#1b1e26;--text:#e5e7eb;--muted:#9ca3af;--line:#2a2f3a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+.top{display:flex;gap:14px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:14px;position:sticky;top:8px;z-index:2}
+.ring{width:64px;height:64px;border-radius:50%;background:conic-gradient(var(--pass) var(--p,0%),var(--line) 0);display:grid;place-items:center;flex:none}
+.ring b{background:var(--card);width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-size:13px}
+.stats{flex:1;font-size:13px;color:var(--muted)}.stats span{margin-right:10px}
+.btns{display:flex;flex-direction:column;gap:6px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:8px;padding:6px 10px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+h2{font-size:15px;color:var(--muted);margin:18px 0 8px}
+.item{display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.item.pass{border-left-color:var(--pass)}.item.fail{border-left-color:var(--fail)}.item.hold{border-left-color:var(--hold)}
+.no{font-weight:700;color:var(--accent);flex:none;width:30px}
+.body{flex:1;min-width:0}.title{font-weight:600}
+.chip{display:inline-block;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 6px;font-family:ui-monospace,monospace;font-size:12px;margin:2px 4px 2px 0}
+.exp{color:var(--muted);font-size:13px;margin-top:2px}
+.st{display:flex;gap:4px;margin-top:8px}.st button{padding:4px 8px;font-size:13px}
+.st button.on.p{background:var(--pass);border-color:var(--pass);color:#fff}.st button.on.f{background:var(--fail);border-color:var(--fail);color:#fff}.st button.on.h{background:var(--hold);border-color:var(--hold);color:#fff}
+textarea{width:100%;margin-top:6px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:8px;padding:6px 8px;font:inherit;font-size:13px;resize:vertical;min-height:34px}
+</style>
+</head>
+<body><div class="wrap">
+<h1>가계부 v1 수동 체크리스트</h1>
+<p class="sub">두 분 폰에서 직접 눌러 보며 확인. 결과는 이 브라우저에 자동 저장됩니다.</p>
+<div class="top">
+  <div class="ring" id="ring"><b id="pct">0%</b></div>
+  <div class="stats"><span>✓ 통과 <b id="c-pass">0</b></span><span>✕ 실패 <b id="c-fail">0</b></span><span>◒ 보류 <b id="c-hold">0</b></span><span>남음 <b id="c-rest">0</b></span></div>
+  <div class="btns"><button class="primary" id="copy">📋 결과 복사</button><button id="reset">전체 초기화</button></div>
+</div>
+<div id="list"></div>
+</div>
+<script>
+const KEY='ledger_v1_checklist_v1';
+const G=[
+ ['A','로그인·설치',[
+  ['배포 URL 열기','Vercel 주소','로그인 화면이 뜬다'],
+  ['틀린 비밀번호','아무 값','"이메일 또는 비밀번호가 틀렸어요"'],
+  ['정상 로그인','내 계정','가계부 화면, 이번 달 표시'],
+  ['앱 완전히 닫고 다시 열기','','로그인 없이 바로 가계부'],
+  ['홈 화면에 추가','크롬 ⋮ → 홈 화면에 추가','아이콘 생성, 주소창 없이 열림'],
+ ]],
+ ['B','입력·수정·삭제',[
+  ['+ 눌러 지출 저장','12000 · 식비 · 메모 "마트"','목록에 오늘 날짜로 표시, 지출 합계 증가'],
+  ['금액 비우면 저장 불가','금액 지움','저장 버튼 흐려짐'],
+  ['수입 저장','수입 토글 · 3000000 · 월급','파란색 +3,000,000, 수입 합계'],
+  ['카테고리 없이 저장','칩 선택 안 함','"미분류"로 표시'],
+  ['항목 눌러 수정','금액 12000 → 15000','목록·합계 반영'],
+  ['삭제','항목 → 삭제 → 확인','목록에서 사라지고 합계 반영'],
+  ['다른 달 날짜로 저장','날짜를 지난달로','저장 후 화면이 지난달로 이동해 보여줌'],
+ ]],
+ ['C','카테고리',[
+  ['입력 시트에서 새 카테고리','＋ 새 카테고리 → "반려동물"','칩 생기고 선택 상태'],
+  ['설정에서 이름 변경','이름 탭 → "반려동물"→"강아지"','거래 목록에도 바뀐 이름'],
+  ['설정에서 순서 이동','▲ ▼','입력 시트 칩 순서도 바뀜'],
+  ['설정에서 삭제','✕ → 확인','그 카테고리 거래가 미분류로 남음'],
+ ]],
+ ['D','월·요약',[
+  ['월 이동','◀ ▶','라벨·목록·합계가 그 달 기준'],
+  ['기록 없는 달','','"이번 달 기록이 없어요"'],
+  ['요약 합계 검산','수입−지출','남은 돈 일치'],
+  ['카테고리별 지출','접힘 펼치기','큰 금액 순, 미분류 포함'],
+ ]],
+ ['E','둘이 같이·오프라인',[
+  ['상대 폰 실시간 반영','한 명이 저장','다른 폰에 새로고침 없이 나타남 (몇 초 내)'],
+  ['기록자 이니셜','각자 저장','동그라미 글자·색이 사람마다 다름'],
+  ['설정 → 내 이름 변경','','이니셜이 바뀜 (상대 폰도)'],
+  ['비행기 모드에서 앱 열기','','앱은 열리고 "불러오지 못했어요" + 다시 시도'],
+  ['비행기 모드에서 저장 시도','','"저장에 실패했어요" 토스트, 시트 유지'],
+  ['로그아웃','설정 → 로그아웃','로그인 화면'],
+ ]],
+];
+const items=[];G.forEach(([g,gn,arr])=>arr.forEach((it,i)=>items.push({id:`${g}${i+1}`,g,gn,title:it[0],input:it[1],exp:it[2]})));
+let st={};try{st=JSON.parse(localStorage.getItem(KEY)||'{}')}catch{}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(st))}catch{}};
+const L={pass:'✓통과',fail:'✕실패',hold:'◒보류'};
+function render(){
+  const list=document.getElementById('list');let html='',lastG='';
+  for(const it of items){
+    if(it.g!==lastG){html+=`<h2>${it.g}. ${it.gn}</h2>`;lastG=it.g}
+    const s=st[it.id]||{};
+    html+=`<div class="item ${s.s||''}" data-id="${it.id}"><div class="no">${it.id}</div><div class="body">
+      <div class="title">${it.title}</div>${it.input?`<div><span class="chip">${it.input}</span></div>`:''}
+      <div class="exp">기대: ${it.exp}</div>
+      <div class="st"><button class="p ${s.s==='pass'?'on':''}" data-s="pass">✓통과</button><button class="f ${s.s==='fail'?'on':''}" data-s="fail">✕실패</button><button class="h ${s.s==='hold'?'on':''}" data-s="hold">◒보류</button></div>
+      <textarea placeholder="메모">${s.m||''}</textarea></div></div>`;
+  }
+  list.innerHTML=html;
+  const c={pass:0,fail:0,hold:0};items.forEach(it=>{const s=st[it.id]?.s;if(s)c[s]++});
+  const rest=items.length-c.pass-c.fail-c.hold;
+  document.getElementById('c-pass').textContent=c.pass;document.getElementById('c-fail').textContent=c.fail;
+  document.getElementById('c-hold').textContent=c.hold;document.getElementById('c-rest').textContent=rest;
+  const p=Math.round(c.pass/items.length*100);document.getElementById('pct').textContent=p+'%';document.getElementById('ring').style.setProperty('--p',p+'%');
+}
+document.getElementById('list').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-s]');if(!b)return;const id=b.closest('.item').dataset.id;
+  st[id]=st[id]||{};st[id].s=st[id].s===b.dataset.s?'':b.dataset.s;save();render();
+});
+document.getElementById('list').addEventListener('input',e=>{
+  if(e.target.tagName!=='TEXTAREA')return;const id=e.target.closest('.item').dataset.id;st[id]=st[id]||{};st[id].m=e.target.value;save();
+});
+document.getElementById('reset').addEventListener('click',()=>{if(!confirm('모든 상태와 메모를 지울까요?'))return;st={};save();render();});
+document.getElementById('copy').addEventListener('click',async()=>{
+  const lines=[];for(const it of items){const s=st[it.id];if(!s||(!s.s&&!s.m))continue;lines.push(`${it.id} ${s.s?L[s.s]:'(메모만)'} — ${it.title}`);if(s.m)lines.push(`  ↳ ${s.m}`);}
+  const text=lines.length?lines.join('\n'):'(표시한 항목 없음)';
+  try{await navigator.clipboard.writeText(text);alert('복사했어요. 대화창에 붙여넣어 주세요.')}catch{prompt('복사해서 붙여넣어 주세요',text)}
+});
+render();
+</script>
+</body></html>
