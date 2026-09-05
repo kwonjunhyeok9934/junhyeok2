@@ -9,9 +9,18 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="css/app.css">
+  <style>#splash{position:fixed;inset:0;z-index:100;background:#3182f6}</style>
 </head>
 <body>
+
+<!-- 시작 스플래시 -->
+<div id="splash" aria-hidden="true">
+  <svg class="logo" viewBox="0 0 100 100"><circle cx="37" cy="50" r="22"/><circle cx="63" cy="50" r="22"/></svg>
+  <div class="name">우리 가계부</div>
+  <div class="sub">가계부 · 할일 · 스케줄</div>
+</div>
 
 <!-- Supabase 설정이 비어 있을 때 -->
 <section id="setup-notice" class="center-box" hidden>
@@ -21,7 +30,11 @@
 
 <!-- 로그인 -->
 <section id="view-login" class="center-box" hidden>
-  <h1 class="brand">우리 가계부</h1>
+  <div class="brand">
+    <svg viewBox="0 0 100 100"><circle cx="37" cy="50" r="22"/><circle cx="63" cy="50" r="22"/></svg>
+    <h1>우리 가계부</h1>
+    <p>둘이 함께 쓰는 가계부 · 할일 · 스케줄</p>
+  </div>
   <form id="login-form" autocomplete="on">
     <label>이메일
       <input id="login-email" type="email" autocomplete="username" required>
@@ -60,7 +73,7 @@
         <ul id="cat-totals-list" class="plain-list"></ul>
       </details>
 
-      <div id="tx-list"></div>
+      <div id="tx-list"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
 
     </section>
 
@@ -70,7 +83,7 @@
         <button type="submit" class="btn primary small">추가</button>
       </form>
 
-      <div id="todo-list"></div>
+      <div id="todo-list"><div class="skel"></div><div class="skel"></div></div>
 
       <details id="todo-done" class="card" hidden>
         <summary>완료됨 <span id="todo-done-count">0</span></summary>
@@ -88,7 +101,7 @@
       <div class="cal-head"><span class="sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span></div>
       <div id="cal-grid" class="cal-grid"></div>
       <h2 id="day-label" class="day-label"></h2>
-      <div id="event-list"></div>
+      <div id="event-list"><div class="skel"></div></div>
     </section>
   </main>
 

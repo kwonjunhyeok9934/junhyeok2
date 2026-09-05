@@ -1,6 +1,6 @@
 // 스케줄 탭: 월간 달력, 선택한 날 일정 목록, 일정 시트.
 import { sb } from './supabase.js';
-import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog } from './ui.js';
+import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic } from './ui.js';
 import { monthRange, shiftMonth, monthLabel, todayLocal, calendarGrid, groupEventsByDate, formatTime } from './calc.js';
 
 const state = { year: 0, month: 0, selected: '', events: [], profiles: [], userId: null, editing: null };
@@ -43,6 +43,7 @@ export function init({ userId }) {
     const cell = e.target.closest('.cal-cell');
     if (!cell) return;
     state.selected = cell.dataset.date;
+    haptic(5);
     render();
   });
 
@@ -123,10 +124,10 @@ function render() {
   el.dayLabel.textContent = dayLabel(state.selected);
   const list = byDate.get(state.selected) ?? [];
   el.list.innerHTML = list.length
-    ? list.map((e) => {
+    ? list.map((e, i) => {
         const p = e.owner ? profile.get(e.owner) : null;
         return `
-        <div class="event-row" data-id="${e.id}">
+        <div class="event-row" data-id="${e.id}" style="--i:${Math.min(i, 12)}">
           <div class="event-time ${e.time ? '' : 'allday'}">${formatTime(e.time)}</div>
           <div class="event-main">
             <div class="event-title">${escapeHtml(e.title)}</div>
@@ -189,6 +190,7 @@ async function save() {
   try {
     if (state.editing) unwrap(await sb.from('events').update(payload).eq('id', state.editing.id));
     else unwrap(await sb.from('events').insert({ ...payload, created_by: state.userId }));
+    haptic();
     closeSheet(el.sheet);
     state.selected = payload.date;
     state.year = Number(payload.date.slice(0, 4));

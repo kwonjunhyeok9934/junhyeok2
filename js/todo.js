@@ -1,6 +1,6 @@
 // 할일 탭: 빠른 입력, 목록(미완료/완료), 체크 토글, 편집 시트.
 import { sb } from './supabase.js';
-import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog } from './ui.js';
+import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic } from './ui.js';
 import { todayLocal, dueLabel, sortTodos } from './calc.js';
 
 const state = { todos: [], profiles: [], userId: null, editing: null };
@@ -117,19 +117,19 @@ function render() {
   const profile = new Map(state.profiles.map((p) => [p.id, p]));
 
   el.list.innerHTML = open.length
-    ? open.map((t) => row(t, today, profile)).join('')
+    ? open.map((t, i) => row(t, today, profile, i)).join('')
     : '<p class="empty">할일이 없어요. 위에 적어 보세요</p>';
 
   el.doneWrap.hidden = done.length === 0;
   el.doneCount.textContent = done.length;
-  el.doneList.innerHTML = done.map((t) => row(t, today, profile)).join('');
+  el.doneList.innerHTML = done.map((t, i) => row(t, today, profile, i)).join('');
 }
 
-function row(t, today, profile) {
+function row(t, today, profile, i = 0) {
   const due = dueLabel(t.due, today);
   const p = t.assignee ? profile.get(t.assignee) : null;
   return `
-    <div class="todo-row ${t.done ? 'done' : ''}" data-id="${t.id}">
+    <div class="todo-row ${t.done ? 'done' : ''}" data-id="${t.id}" style="--i:${Math.min(i, 12)}">
       <button type="button" class="todo-check" aria-label="${t.done ? '완료 해제' : '완료'}">${t.done ? '✓' : ''}</button>
       <div class="todo-main">
         <div class="todo-title">${escapeHtml(t.title)}</div>
@@ -141,6 +141,7 @@ function row(t, today, profile) {
 
 async function toggleDone(todo) {
   const done = !todo.done;
+  if (done) haptic(15);
   try {
     unwrap(await sb.from('todos').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', todo.id));
     await refresh();

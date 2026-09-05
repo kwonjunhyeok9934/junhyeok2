@@ -1,6 +1,6 @@
 // 가계부 탭: 월 이동, 조회, 요약·목록 렌더, 입력 시트 저장/삭제.
 import { sb } from './supabase.js';
-import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog } from './ui.js';
+import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
 import {
   monthRange, shiftMonth, monthLabel, todayLocal, summarize, sumByCategory, groupByDate, formatWon, parseWon,
 } from './calc.js';
@@ -147,9 +147,9 @@ function unwrap({ data, error }) {
 
 function render() {
   const sum = summarize(state.txs);
-  el.sumIncome.textContent = formatWon(sum.income);
-  el.sumExpense.textContent = formatWon(sum.expense);
-  el.sumBalance.textContent = formatWon(sum.balance);
+  animateNumber(el.sumIncome, sum.income, formatWon);
+  animateNumber(el.sumExpense, sum.expense, formatWon);
+  animateNumber(el.sumBalance, sum.balance, formatWon);
 
   const byCat = sumByCategory(state.txs, state.cats);
   el.catTotals.innerHTML = byCat.length
@@ -162,11 +162,12 @@ function render() {
   }
   const catName = new Map(state.cats.map((c) => [c.id, c.name]));
   const profile = new Map(state.profiles.map((p) => [p.id, p]));
+  let i = 0;
   el.list.innerHTML = groupByDate(state.txs)
     .map(
       (g) => `
       <div class="date-head">${dateHead(g.date)}</div>
-      ${g.items.map((t) => txRow(t, catName, profile)).join('')}`,
+      ${g.items.map((t) => txRow(t, catName, profile, i++)).join('')}`,
     )
     .join('');
 }
@@ -177,13 +178,13 @@ function dateHead(date) {
   return `${m}월 ${d}일 (${day})`;
 }
 
-function txRow(t, catName, profile) {
+function txRow(t, catName, profile, i) {
   const p = profile.get(t.created_by);
   const initial = p ? p.name.slice(0, 1) : '?';
   const color = p ? p.color : '#9ca3af';
   const isIncome = t.kind === 'income';
   return `
-    <div class="tx-row" data-id="${t.id}">
+    <div class="tx-row" data-id="${t.id}" style="--i:${Math.min(i, 12)}">
       <div class="tx-main">
         <div class="tx-cat">${escapeHtml(catName.get(t.category_id) ?? '미분류')}</div>
         ${t.memo ? `<div class="tx-memo">${escapeHtml(t.memo)}</div>` : ''}
@@ -262,6 +263,7 @@ async function save() {
     } else {
       unwrap(await sb.from('transactions').insert({ ...payload, created_by: state.userId }));
     }
+    haptic();
     closeSheet(el.sheet);
     jumpToMonthOf(payload.date);
     await refresh();

@@ -1,6 +1,6 @@
 // 진입점: 설정 확인 → 세션 → 화면 전환, 해시 탭, 실시간 구독, 설정 화면.
 import { isConfigured, sb, getSession, signIn, signOut, onAuthChange } from './supabase.js';
-import { $, toast } from './ui.js';
+import { $, toast, haptic } from './ui.js';
 import * as ledger from './ledger.js';
 import * as todo from './todo.js';
 import * as schedule from './schedule.js';
@@ -24,6 +24,21 @@ let channel = null;
 
 function show(name) {
   for (const [k, v] of Object.entries(view)) v.hidden = k !== name;
+  hideSplash();
+}
+
+// 스플래시는 최소 900ms는 보여주고, 첫 화면이 준비되면 사라진다.
+const splashStart = performance.now();
+let splashHidden = false;
+function hideSplash() {
+  if (splashHidden) return;
+  splashHidden = true;
+  const wait = Math.max(0, 900 - (performance.now() - splashStart));
+  setTimeout(() => {
+    const el = $('#splash');
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 500);
+  }, wait);
 }
 
 // ---- 부트 -----------------------------------------------------------------
@@ -149,7 +164,17 @@ function currentTab() {
 
 function routeHash() {
   const tab = currentTab();
-  for (const [k, t] of Object.entries(TABS)) t.el.hidden = k !== tab;
+  for (const [k, t] of Object.entries(TABS)) {
+    const wasHidden = t.el.hidden;
+    t.el.hidden = k !== tab;
+    if (wasHidden && !t.el.hidden) {
+      // 다시 보일 때 등장 애니메이션을 재생한다.
+      t.el.style.animation = 'none';
+      void t.el.offsetWidth;
+      t.el.style.animation = '';
+    }
+  }
+  haptic(5);
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));
   $('#page-title').textContent = TABS[tab].title;
   $('#btn-add').hidden = tab === 'todo';
