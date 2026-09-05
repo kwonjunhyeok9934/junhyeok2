@@ -216,3 +216,27 @@ main { padding: 12px 14px calc(var(--tabbar-h) + 84px); }
   font-size: 14px; max-width: 90vw;
 }
 #toast.show { opacity: .95; transform: translate(-50%, 0); }
+
+/* 할일 */
+.quick { margin-bottom: 12px; }
+.field-label { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.todo-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
+}
+.todo-row:active { background: var(--accent-soft); }
+.todo-check {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  border: 2px solid var(--muted); background: transparent; color: #fff;
+  font-size: 15px; line-height: 1; padding: 0; cursor: pointer;
+}
+.todo-row.done .todo-check { background: var(--accent); border-color: var(--accent); }
+.todo-main { flex: 1; min-width: 0; }
+.todo-title { word-break: break-word; }
+.todo-row.done .todo-title { color: var(--muted); text-decoration: line-through; }
+.todo-due { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.todo-due.overdue { color: var(--danger); font-weight: 600; }
+#todo-done { margin-top: 14px; }
+#todo-done summary { cursor: pointer; font-weight: 600; color: var(--muted); font-size: 14px; }
+#todo-done-list { margin-top: 8px; }

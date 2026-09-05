@@ -1,6 +1,6 @@
 # 우리 가계부 (junhyeok2)
 
-두 사람이 함께 쓰는 모바일 웹앱(PWA). 1차는 **가계부**, 이후 할일·스케줄을 얹는다.
+두 사람이 함께 쓰는 모바일 웹앱(PWA). 1차 가계부, 2차 할일 완료. 이후 스케줄을 얹는다.
 설계: `docs/superpowers/specs/2026-09-05-couple-ledger-design.md`
 
 - 화면: HTML/CSS/JS, 빌드 없음
@@ -38,6 +38,7 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 | `index.html` `css/app.css` | 화면 뼈대와 스타일 |
 | `js/app.js` | 진입점: 세션 → 화면 전환, 탭, 실시간 구독, 설정 |
 | `js/ledger.js` | 가계부 탭 (조회·요약·목록·입력 시트) |
+| `js/todo.js` | 할일 탭 (빠른 입력·목록·완료·편집 시트) |
 | `js/categories.js` | 카테고리 CRUD와 설정 화면 |
 | `js/calc.js` | 순수 계산 함수 (`tests/calc.test.js`) |
 | `js/supabase.js` `js/config.js` | Supabase 클라이언트와 연결 정보 |

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   monthRange, shiftMonth, monthLabel, summarize, sumByCategory,
-  groupByDate, formatWon, parseWon,
+  groupByDate, formatWon, parseWon, dueLabel, sortTodos,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -61,4 +61,27 @@ test('formatWon / parseWon', () => {
   assert.equal(parseWon('1,234,567'), 1234567);
   assert.equal(parseWon('12abc'), 12);
   assert.equal(parseWon(''), 0);
+});
+
+test('dueLabel: 지남/오늘/내일/날짜', () => {
+  const today = '2026-09-05';
+  assert.equal(dueLabel(null, today), null);
+  assert.deepEqual(dueLabel('2026-09-03', today), { text: '2일 지남', overdue: true });
+  assert.deepEqual(dueLabel('2026-09-05', today), { text: '오늘', overdue: false });
+  assert.deepEqual(dueLabel('2026-09-06', today), { text: '내일', overdue: false });
+  assert.deepEqual(dueLabel('2026-10-01', today), { text: '10월 1일', overdue: false });
+});
+
+test('sortTodos: 마감 있는 것 먼저, 완료는 최신순', () => {
+  const todos = [
+    { id: 1, done: false, due: null,         created_at: '2026-09-01T00:00:00Z' },
+    { id: 2, done: false, due: '2026-09-10', created_at: '2026-09-02T00:00:00Z' },
+    { id: 3, done: true,  due: null,         created_at: '2026-09-01T00:00:00Z', done_at: '2026-09-03T00:00:00Z' },
+    { id: 4, done: false, due: '2026-09-07', created_at: '2026-09-03T00:00:00Z' },
+    { id: 5, done: false, due: null,         created_at: '2026-08-30T00:00:00Z' },
+    { id: 6, done: true,  due: null,         created_at: '2026-09-01T00:00:00Z', done_at: '2026-09-04T00:00:00Z' },
+  ];
+  const { open, done } = sortTodos(todos);
+  assert.deepEqual(open.map(t => t.id), [4, 2, 5, 1]);
+  assert.deepEqual(done.map(t => t.id), [6, 3]);
 });

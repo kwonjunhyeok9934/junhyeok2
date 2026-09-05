@@ -69,3 +69,30 @@ export function parseWon(str) {
   const digits = String(str).replace(/[^0-9]/g, '');
   return digits ? parseInt(digits, 10) : 0;
 }
+
+// ---- 할일 -------------------------------------------------------------------
+
+// due('YYYY-MM-DD' | null) 를 today 기준 라벨로. null 이면 null.
+export function dueLabel(due, today) {
+  if (!due) return null;
+  const days = Math.round((Date.parse(due) - Date.parse(today)) / 86400000);
+  if (days < 0) return { text: `${-days}일 지남`, overdue: true };
+  if (days === 0) return { text: '오늘', overdue: false };
+  if (days === 1) return { text: '내일', overdue: false };
+  return { text: `${Number(due.slice(5, 7))}월 ${Number(due.slice(8, 10))}일`, overdue: false };
+}
+
+// 미완료: 마감 있는 것(가까운 순) → 마감 없는 것(만든 순). 완료: 완료 시각 최신순.
+export function sortTodos(todos) {
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const open = todos
+    .filter((t) => !t.done)
+    .sort((a, b) => {
+      if (a.due && b.due) return cmp(a.due, b.due) || cmp(a.created_at, b.created_at);
+      if (a.due) return -1;
+      if (b.due) return 1;
+      return cmp(a.created_at, b.created_at);
+    });
+  const done = todos.filter((t) => t.done).sort((a, b) => cmp(b.done_at ?? '', a.done_at ?? ''));
+  return { open, done };
+}

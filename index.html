@@ -66,7 +66,18 @@
     </section>
 
     <section id="tab-todo" class="tab" hidden>
-      <p class="placeholder">할일은 준비 중이에요</p>
+      <form id="todo-quick" class="row quick">
+        <input id="todo-quick-title" type="text" placeholder="할일을 적고 Enter" maxlength="80" autocomplete="off">
+        <button type="submit" class="btn primary small">추가</button>
+      </form>
+
+      <div id="todo-list"></div>
+
+      <details id="todo-done" class="card" hidden>
+        <summary>완료됨 <span id="todo-done-count">0</span></summary>
+        <div id="todo-done-list"></div>
+        <button type="button" id="todo-clear-done" class="btn small danger" style="margin-top:8px">완료 모두 삭제</button>
+      </details>
     </section>
 
     <section id="tab-schedule" class="tab" hidden>
@@ -112,6 +123,32 @@
       <div class="row actions">
         <button type="button" id="tx-delete" class="btn danger" hidden>삭제</button>
         <button type="submit" id="tx-save" class="btn primary grow" disabled>저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 할일 편집 시트 -->
+<div id="sheet-todo" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <form id="todo-form">
+      <input type="hidden" id="todo-id">
+      <input id="todo-title" type="text" placeholder="할일" maxlength="80" required>
+      <div>
+        <div class="field-label">담당</div>
+        <div id="todo-assignee" class="seg"></div>
+      </div>
+      <div>
+        <div class="field-label">마감일</div>
+        <div class="row">
+          <input id="todo-due" type="date">
+          <button type="button" id="todo-due-clear" class="btn small">없음</button>
+        </div>
+      </div>
+      <div class="row actions">
+        <button type="button" id="todo-delete" class="btn danger">삭제</button>
+        <button type="submit" id="todo-save" class="btn primary grow">저장</button>
       </div>
     </form>
   </div>

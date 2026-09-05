@@ -102,8 +102,33 @@ select * from (values
 ) as v(name, kind, sort_order)
 where not exists (select 1 from categories);
 
--- 6. 확인용: 실행 결과에 표 3개와 카테고리 개수가 보이면 성공 -----------------
+-- 7. 할일 ---------------------------------------------------------------------
+
+create table if not exists todos (
+  id         bigint generated always as identity primary key,
+  title      text not null,
+  done       boolean not null default false,
+  done_at    timestamptz,
+  assignee   uuid references auth.users(id) on delete set null,
+  due        date,
+  created_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now()
+);
+
+alter table todos enable row level security;
+drop policy if exists "auth all" on todos;
+create policy "auth all" on todos for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'todos') then
+    alter publication supabase_realtime add table todos;
+  end if;
+end $$;
+
+-- 8. 확인용: 실행 결과에 표 4개와 카테고리 개수가 보이면 성공 -----------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
 union all select 'categories', count(*) from categories
-union all select 'transactions', count(*) from transactions;
+union all select 'transactions', count(*) from transactions
+union all select 'todos', count(*) from todos;

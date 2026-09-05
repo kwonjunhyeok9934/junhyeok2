@@ -2,6 +2,7 @@
 import { isConfigured, sb, getSession, signIn, signOut, onAuthChange } from './supabase.js';
 import { $, toast } from './ui.js';
 import * as ledger from './ledger.js';
+import * as todo from './todo.js';
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -93,8 +94,10 @@ function enterMain(user) {
   currentUser = user;
   show('main');
   ledger.init({ userId: user.id });
+  todo.init({ userId: user.id });
   routeHash();
   ledger.refresh();
+  todo.refresh();
   subscribeRealtime();
   document.addEventListener('visibilitychange', onVisible);
 }
@@ -109,7 +112,9 @@ function leaveMain() {
 }
 
 function onVisible() {
-  if (document.visibilityState === 'visible') ledger.refresh();
+  if (document.visibilityState !== 'visible') return;
+  ledger.refresh();
+  todo.refresh();
 }
 
 function subscribeRealtime() {
@@ -118,6 +123,7 @@ function subscribeRealtime() {
     .channel('db-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => ledger.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => ledger.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => todo.refresh())
     .subscribe();
 }
 
