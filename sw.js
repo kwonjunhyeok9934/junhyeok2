@@ -1,6 +1,6 @@
 // 앱 껍데기만 캐시한다. Supabase·CDN 요청은 건드리지 않는다.
 // 파일을 바꾸면 CACHE 이름의 버전을 올려서 옛 캐시가 지워지게 한다.
-const CACHE = 'couple-v8';
+const CACHE = 'couple-v9';
 const SHELL = [
   './',
   './index.html',

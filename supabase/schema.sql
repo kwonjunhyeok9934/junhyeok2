@@ -158,8 +158,10 @@ create table if not exists fixed_costs (
   name       text not null,
   amount     integer not null check (amount > 0),
   memo       text not null default '',
+  owner      uuid references auth.users(id) on delete set null,   -- null = 공통
   created_at timestamptz not null default now()
 );
+alter table fixed_costs add column if not exists owner uuid references auth.users(id) on delete set null;
 
 alter table fixed_costs enable row level security;
 drop policy if exists "auth all" on fixed_costs;

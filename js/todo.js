@@ -16,6 +16,7 @@ export function init({ userId }) {
     quick: $('#todo-quick'),
     quickTitle: $('#todo-quick-title'),
     list: $('#todo-list'),
+    openCount: $('#todo-open-count'),
     doneWrap: $('#todo-done'),
     doneList: $('#todo-done-list'),
     doneCount: $('#todo-done-count'),
@@ -116,12 +117,13 @@ function render() {
   const today = todayLocal();
   const profile = new Map(state.profiles.map((p) => [p.id, p]));
 
+  el.openCount.textContent = open.length ? `${open.length}` : '';
   el.list.innerHTML = open.length
     ? open.map((t, i) => row(t, today, profile, i)).join('')
-    : '<p class="empty">할일이 없어요. 위에 적어 보세요</p>';
+    : '<p class="empty small">해야 할 일이 없어요</p>';
 
   el.doneWrap.hidden = done.length === 0;
-  el.doneCount.textContent = done.length;
+  el.doneCount.textContent = `${done.length}`;
   el.doneList.innerHTML = done.map((t, i) => row(t, today, profile, i)).join('');
 }
 

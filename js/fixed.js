@@ -3,7 +3,8 @@ import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
 import { formatWon, parseWon } from './calc.js';
 
-const state = { items: [], editing: null };
+const state = { items: [], profiles: [], editing: null };
+const PRESETS = ['월세', '관리비', '통신비', '인터넷', '실비보험', '운전자보험', '자동차보험', '화재보험', '생명보험', '구독', '대출이자', '적금', '교통', '헬스장'];
 let el = null;
 let initialized = false;
 
@@ -12,7 +13,9 @@ export function init() {
   initialized = true;
   el = {
     sum: $('#fixed-sum'),
-    count: $('#fixed-count'),
+    byOwner: $('#fixed-by-owner'),
+    presets: $('#fixed-presets'),
+    owner: $('#fixed-owner'),
     list: $('#fixed-list'),
     sheet: $('#sheet-fixed'),
     form: $('#fixed-form'),
@@ -24,6 +27,17 @@ export function init() {
     del: $('#fixed-delete'),
   };
   bindSheetBackdrop(el.sheet);
+
+  el.presets.innerHTML = PRESETS.map((n) => `<button type="button" class="chip" data-name="${n}">${n}</button>`).join('');
+  el.presets.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-name]');
+    if (!chip) return;
+    el.name.value = chip.dataset.name;
+    markPreset();
+    el.name.dispatchEvent(new Event('input'));
+    el.amount.focus();
+  });
+  el.name.addEventListener('input', markPreset);
 
   el.list.addEventListener('click', (e) => {
     const row = e.target.closest('.tx-row');
@@ -51,9 +65,18 @@ function unwrap({ data, error }) {
   return data;
 }
 
+function markPreset() {
+  el.presets.querySelectorAll('.chip').forEach((c) => c.classList.toggle('selected', c.dataset.name === el.name.value.trim()));
+}
+
 export async function refresh() {
   try {
-    state.items = unwrap(await sb.from('fixed_costs').select('*').order('created_at', { ascending: true }));
+    const [profiles, items] = await Promise.all([
+      sb.from('profiles').select('id,name,color').then(unwrap),
+      sb.from('fixed_costs').select('*').order('created_at', { ascending: true }).then(unwrap),
+    ]);
+    state.profiles = profiles;
+    state.items = items;
     render();
   } catch (err) {
     console.error(err);
@@ -64,15 +87,39 @@ export async function refresh() {
   }
 }
 
+// 주인 목록: 공통(null) 먼저, 그 다음 profiles 순서.
+function owners() {
+  return [{ id: null, name: '공통' }, ...state.profiles];
+}
+
 function render() {
   const total = state.items.reduce((a, x) => a + x.amount, 0);
   animateNumber(el.sum, total, formatWon);
-  el.count.textContent = state.items.length ? `${state.items.length}개 항목` : '';
-  el.list.innerHTML = state.items.length
-    ? state.items
+
+  const groups = owners().map((o) => ({
+    ...o,
+    items: state.items.filter((x) => (x.owner ?? null) === o.id),
+  }));
+  for (const g of groups) g.total = g.items.reduce((a, x) => a + x.amount, 0);
+
+  el.byOwner.innerHTML = groups
+    .map((g) => `<li><span class="who">${escapeHtml(g.name)}</span><span class="amt">${formatWon(g.total)}</span></li>`)
+    .join('');
+
+  if (!state.items.length) {
+    el.list.innerHTML = '<p class="empty">고정비를 아직 안 적었어요<br>오른쪽 아래 + 로 추가해 보세요</p>';
+    return;
+  }
+  let i = 0;
+  el.list.innerHTML = groups
+    .filter((g) => g.items.length)
+    .map(
+      (g) => `
+      <div class="group-head"><span>${escapeHtml(g.name)}</span><span class="sub">${formatWon(g.total)}</span></div>
+      ${g.items
         .map(
-          (x, i) => `
-      <div class="tx-row" data-id="${x.id}" style="--i:${Math.min(i, 12)}">
+          (x) => `
+      <div class="tx-row" data-id="${x.id}" style="--i:${Math.min(i++, 12)}">
         <div class="tx-main">
           <div class="tx-cat">${escapeHtml(x.name)}</div>
           ${x.memo ? `<div class="tx-memo">${escapeHtml(x.memo)}</div>` : ''}
@@ -80,8 +127,9 @@ function render() {
         <div class="tx-amount">${formatWon(x.amount)}</div>
       </div>`,
         )
-        .join('')
-    : '<p class="empty">고정비를 아직 안 적었어요<br>오른쪽 아래 + 로 추가해 보세요</p>';
+        .join('')}`,
+    )
+    .join('');
 }
 
 export function openNew() {
@@ -94,6 +142,12 @@ function openFixedSheet(item) {
   el.name.value = item?.name ?? '';
   el.amount.value = item ? formatWon(item.amount) : '';
   el.memo.value = item?.memo ?? '';
+  markPreset();
+  el.owner.innerHTML = owners()
+    .map(
+      (o) => `<label><input type="radio" name="fixed-owner" value="${o.id ?? ''}" ${String(item?.owner ?? '') === String(o.id ?? '') ? 'checked' : ''}><span>${escapeHtml(o.name)}</span></label>`,
+    )
+    .join('');
   el.save.disabled = !item;
   el.del.hidden = !item;
   openSheet(el.sheet);
@@ -101,7 +155,12 @@ function openFixedSheet(item) {
 }
 
 async function save() {
-  const payload = { name: el.name.value.trim(), amount: parseWon(el.amount.value), memo: el.memo.value.trim() };
+  const payload = {
+    name: el.name.value.trim(),
+    amount: parseWon(el.amount.value),
+    memo: el.memo.value.trim(),
+    owner: el.form.querySelector('input[name="fixed-owner"]:checked')?.value || null,
+  };
   if (!payload.name || payload.amount <= 0) return;
   el.save.disabled = true;
   try {
