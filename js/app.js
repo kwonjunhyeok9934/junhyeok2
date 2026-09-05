@@ -69,11 +69,22 @@ function bindLogin() {
       enterMain(session.user);
     } catch (e2) {
       console.warn(e2);
+      err.textContent = loginErrorText(e2);
       err.hidden = false;
     } finally {
       btn.disabled = false;
     }
   });
+}
+
+// Supabase 오류 문구를 우리말로. 모르는 문구는 그대로 보여줘서 원인을 찾을 수 있게 한다.
+function loginErrorText(e) {
+  const m = (e && e.message) || '';
+  if (/invalid login credentials/i.test(m)) return '이메일 또는 비밀번호가 틀렸어요';
+  if (/email not confirmed/i.test(m)) return '계정이 확인(Confirm)되지 않았어요. Supabase Users에서 확인해 주세요';
+  if (/logins are disabled|provider is not enabled/i.test(m)) return 'Supabase에서 이메일 로그인이 꺼져 있어요 (Authentication → Providers → Email)';
+  if (/failed to fetch|network/i.test(m)) return '서버에 연결할 수 없어요. 인터넷 연결을 확인해 주세요';
+  return m ? `로그인 실패: ${m}` : '로그인에 실패했어요';
 }
 
 // ---- 메인 -----------------------------------------------------------------
