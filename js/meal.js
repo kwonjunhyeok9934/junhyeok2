@@ -7,7 +7,8 @@ import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirm
 import {
   todayLocal, shiftDay, formatWon, parseWon, dayName,
   MEAL_SLOTS, SLOT_LABEL, weekStart, weekDays, weekLabel, slotOfHour,
-  cleanLines, buyTotal, buyAmount, mealAmount, sortMealBuys, mealSubline,
+  cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL,
+  buyTotal, buyAmount, mealAmount, sortMealBuys, mealSubline,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
 } from './calc.js';
 import { fetchCategories, addCategory } from './categories.js';
@@ -20,7 +21,7 @@ const state = {
   userId: null,
   editing: null,      // 수정 중인 끼니, 새 항목이면 null
   placeId: null,
-  sets: [],           // [{ key, id, howId, txId, lines:[{name,amount}], picking }]
+  sets: [],           // [{ key, id, howId, shop, txId, lines:[{name,amount}], picking }]
   openKey: null,      // 펼쳐진 세트의 key. null 이면 전부 접힘
   nextKey: 1,
 };
@@ -100,7 +101,7 @@ export async function refresh() {
       sb
         .from('meals')
         .select(`id, date, slot, menu, eater, place_id, created_at, created_by,
-                 buys:meal_buys(id, how_id, lines, transaction_id, sort_order, created_at,
+                 buys:meal_buys(id, how_id, shop, lines, transaction_id, sort_order, created_at,
                                 tx:transactions(id, kind, amount, date, category_id, memo))`)
         .gte('date', from)
         .lte('date', days[6])
@@ -255,6 +256,7 @@ function openMealSheet(m, preset = {}) {
     key: state.nextKey++,
     id: b.id,
     howId: b.how_id,
+    shop: b.shop ?? '',
     txId: b.transaction_id,
     lines: cleanLines(b.lines),
     picking: false,
@@ -328,7 +330,7 @@ async function createPlace() {
 function addSet() {
   commitOpenSet();
   const key = state.nextKey++;
-  state.sets.push({ key, id: null, howId: null, txId: null, lines: [], picking: true });
+  state.sets.push({ key, id: null, howId: null, shop: '', txId: null, lines: [], picking: true });
   state.openKey = key;
   renderSets();
   el.sets.querySelector(`[data-key="${key}"]`)?.scrollIntoView({ block: 'nearest' });
@@ -349,34 +351,42 @@ function openSetHtml(s) {
         </div>
       </div>`;
   }
-  const lines = [...s.lines, { name: '', amount: 0 }]; // 맨 끝에는 항상 빈 줄
+  const how = nameOf(s.howId);
+  const fee = howHasFee(how) ? (s.lines.find((l) => l.name === FEE_LABEL) ?? { name: FEE_LABEL, amount: 0 }) : null;
+  const items = s.lines.filter((l) => l.name !== FEE_LABEL);
+  const rows = [...items, { name: '', amount: 0 }]; // 맨 끝에는 항상 빈 줄
   return `
     <div class="meal-set" data-key="${s.key}">
       <div class="row">
-        <div class="chips"><button type="button" class="chip selected" data-act="repick">${escapeHtml(nameOf(s.howId))} ▾</button></div>
+        <div class="chips"><button type="button" class="chip selected" data-act="repick">${escapeHtml(how)} ▾</button></div>
         <span class="set-sum muted">${buyTotal(s) ? formatWon(buyTotal(s)) : ''}</span>
         <button type="button" class="icon-btn" data-act="del-set" aria-label="이 세트 지우기">✕</button>
       </div>
+      ${howNeedsShop(how)
+        ? `<input type="text" data-role="shop" placeholder="가게 이름 (예: ○○반점)" maxlength="40" autocomplete="off" value="${escapeHtml(s.shop ?? '')}">`
+        : ''}
       <div class="set-items">
-        ${lines.map((l, k) => itemRowHtml(l, k === lines.length - 1)).join('')}
+        ${rows.map((l, k) => itemRowHtml(l, k === rows.length - 1)).join('')}
+        ${fee ? itemRowHtml(fee, true, true) : ''}
       </div>
     </div>`;
 }
 
-function itemRowHtml(line, last) {
+// fixed = 배달료처럼 이름이 고정된 줄. 이름 칸은 읽기 전용이고 지울 수 없다.
+function itemRowHtml(line, last, fixed = false) {
   return `
     <div class="row">
       <input type="text" data-role="name" placeholder="품목 (선택)" maxlength="40" autocomplete="off"
-             enterkeyhint="next" value="${escapeHtml(line.name ?? '')}">
+             enterkeyhint="next" value="${escapeHtml(line.name ?? '')}"${fixed ? ' readonly' : ''}>
       <input type="text" data-role="price" class="price" inputmode="numeric" placeholder="0" autocomplete="off"
              enterkeyhint="next" value="${line.amount ? formatWon(line.amount) : ''}">
-      <button type="button" class="icon-btn" data-act="del-item" aria-label="이 품목 지우기"${last ? ' style="visibility:hidden"' : ''}>✕</button>
+      <button type="button" class="icon-btn" data-act="del-item" aria-label="이 품목 지우기"${last || fixed ? ' style="visibility:hidden"' : ''}>✕</button>
     </div>`;
 }
 
 function collapsedSetHtml(s) {
-  const names = cleanLines(s.lines).map((l) => l.name).filter(Boolean);
-  const sub = names.length > 1 ? `${names[0]} 외 ${names.length - 1}` : names[0] ?? '';
+  const names = cleanLines(dropEmptyFee(s.lines)).map((l) => l.name).filter(Boolean);
+  const sub = s.shop?.trim() || (names.length > 1 ? `${names[0]} 외 ${names.length - 1}` : names[0] ?? '');
   return `
     <div class="tx-row meal-row" data-key="${s.key}" data-act="open-set">
       <div class="tx-main">
@@ -394,6 +404,7 @@ function commitOpenSet() {
   if (!box) return;
   const s = state.sets.find((x) => x.key === state.openKey);
   if (!s) return;
+  s.shop = box.querySelector('[data-role="shop"]')?.value ?? s.shop ?? '';
   s.lines = [...box.querySelectorAll('.set-items .row')].map((row) => ({
     name: row.querySelector('[data-role="name"]').value,
     amount: parseWon(row.querySelector('[data-role="price"]').value),
@@ -424,7 +435,8 @@ function onSetsClick(e) {
     s.howId = Number(e.target.closest('[data-id]').dataset.id);
     s.picking = false;
     renderSets();
-    el.sets.querySelector(`[data-key="${key}"] [data-role="name"]`)?.focus();
+    const box = el.sets.querySelector(`[data-key="${key}"]`);
+    (box?.querySelector('[data-role="shop"]') ?? box?.querySelector('[data-role="name"]'))?.focus();
     return;
   }
   if (act === 'repick') { s.picking = true; renderSets(); return; }
@@ -443,9 +455,10 @@ function onSetsInput(e) {
     input.value = n ? formatWon(n) : '';
   }
   const items = input.closest('.set-items');
-  if (items && input.closest('.row') === items.lastElementChild && (input.value.trim() || parseWon(input.value))) {
-    items.insertAdjacentHTML('beforeend', itemRowHtml({ name: '', amount: 0 }, true));
-    items.lastElementChild.previousElementSibling.querySelector('[data-act="del-item"]').style.visibility = '';
+  const lastFree = [...(items?.children ?? [])].filter((r) => !r.querySelector('[readonly]')).at(-1);
+  if (items && input.closest('.row') === lastFree && (input.value.trim() || parseWon(input.value))) {
+    lastFree.insertAdjacentHTML('afterend', itemRowHtml({ name: '', amount: 0 }, true));
+    lastFree.querySelector('[data-act="del-item"]').style.visibility = '';
   }
   commitOpenSet();
   recalcSums();
@@ -484,18 +497,20 @@ function readSheet() {
     menu: el.menu.value,
     eater: el.form.querySelector('input[name="meal-who"]:checked')?.value || null, // '' → null (uuid 컬럼)
     placeId: state.placeId,
-    buys: state.sets.map((s) => ({ id: s.id, howId: s.howId, transactionId: s.txId, lines: s.lines })),
+    buys: state.sets.map((s) => ({
+      id: s.id, howId: s.howId, shop: s.shop ?? '', transactionId: s.txId, lines: dropEmptyFee(s.lines),
+    })),
   };
 }
 
 function updateSaveState() {
-  const hasSet = state.sets.some((s) => s.howId && cleanLines(s.lines).length);
+  const hasSet = state.sets.some((s) => s.howId && (cleanLines(dropEmptyFee(s.lines)).length || s.shop?.trim()));
   el.save.disabled = !(el.menu.value.trim() || hasSet);
 }
 
 async function save() {
   const input = readSheet();
-  if (!input.menu.trim() && !input.buys.some((b) => cleanLines(b.lines).length)) return;
+  if (!input.menu.trim() && !input.buys.some((b) => cleanLines(b.lines).length || b.shop.trim())) return;
 
   el.save.disabled = true;
   try {

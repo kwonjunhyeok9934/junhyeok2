@@ -492,6 +492,98 @@ begin
   return v_meal;
 end $$;
 
+-- 25. 식비: 가게 이름 -------------------------------------------------------------
+-- 컬리·쿠팡·마트·편의점은 카테고리 이름이 곧 가게지만, 배달·포장·외식은 갈 때마다
+-- 가게가 다르다. 그 가게 이름을 세트에 적는다.
+-- (배달료는 표를 늘리지 않고 '배달료' 라는 이름의 품목 줄로 둔다.)
+
+alter table meal_buys add column if not exists shop text not null default '';
+
+create or replace function save_meal(p jsonb) returns bigint
+language plpgsql as $$
+declare
+  v_meal bigint := nullif(p -> 'meal' ->> 'id', '')::bigint;
+  v_user uuid   := auth.uid();
+  m      jsonb  := p -> 'meal' -> 'patch';
+  s      jsonb;
+  t      jsonb;
+  v_tx   bigint;
+  v_buy  bigint;
+begin
+  if v_meal is null then
+    insert into meals (date, slot, menu, eater, place_id, created_by)
+    values ((m ->> 'date')::date, m ->> 'slot', coalesce(m ->> 'menu', ''),
+            nullif(m ->> 'eater', '')::uuid, nullif(m ->> 'place_id', '')::bigint, v_user)
+    returning id into v_meal;
+  else
+    update meals set date = (m ->> 'date')::date, slot = m ->> 'slot', menu = coalesce(m ->> 'menu', ''),
+                     eater = nullif(m ->> 'eater', '')::uuid, place_id = nullif(m ->> 'place_id', '')::bigint
+    where id = v_meal;
+    if not found then   -- 다른 기기에서 이미 지웠다 → 새로 만든다
+      insert into meals (date, slot, menu, eater, place_id, created_by)
+      values ((m ->> 'date')::date, m ->> 'slot', coalesce(m ->> 'menu', ''),
+              nullif(m ->> 'eater', '')::uuid, nullif(m ->> 'place_id', '')::bigint, v_user)
+      returning id into v_meal;
+    end if;
+  end if;
+
+  -- 화면에서 뺀 세트만 지운다 (트리거가 그 거래까지 지운다).
+  -- "payload 에 없는 건 다 지운다" 로 하면 다른 폰에서 방금 추가한 세트를 조용히 날린다.
+  delete from meal_buys
+  where meal_id = v_meal
+    and id in (select value::bigint from jsonb_array_elements_text(coalesce(p -> 'removed', '[]'::jsonb)));
+
+  for s in select * from jsonb_array_elements(coalesce(p -> 'buys', '[]'::jsonb)) loop
+    t    := s -> 'tx';
+    v_tx := nullif(t ->> 'id', '')::bigint;
+
+    if t ->> 'op' = 'insert' then
+      insert into transactions (kind, amount, category_id, date, memo, created_by)
+      values ('expense', (t -> 'payload' ->> 'amount')::int,
+              nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+              (t -> 'payload' ->> 'date')::date, t -> 'payload' ->> 'memo', v_user)
+      returning id into v_tx;
+    elsif t ->> 'op' = 'update' then
+      update transactions set kind = 'expense', amount = (t -> 'payload' ->> 'amount')::int,
+             category_id = nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+             date = (t -> 'payload' ->> 'date')::date, memo = t -> 'payload' ->> 'memo'
+      where id = v_tx;
+      if not found then   -- 가계부에서 지워진 거래 → 새로 만들어 다시 연결한다
+        insert into transactions (kind, amount, category_id, date, memo, created_by)
+        values ('expense', (t -> 'payload' ->> 'amount')::int,
+                nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+                (t -> 'payload' ->> 'date')::date, t -> 'payload' ->> 'memo', v_user)
+        returning id into v_tx;
+      end if;
+    elsif t ->> 'op' = 'delete' then
+      delete from transactions where id = v_tx;   -- FK 가 세트의 연결을 끊는다
+      v_tx := null;
+    end if;
+
+    v_buy := nullif(s ->> 'id', '')::bigint;
+    if v_buy is null then
+      insert into meal_buys (meal_id, how_id, shop, lines, transaction_id, sort_order, created_by)
+      values (v_meal, nullif(s -> 'patch' ->> 'how_id', '')::bigint, coalesce(s -> 'patch' ->> 'shop', ''),
+              s -> 'patch' -> 'lines', v_tx, coalesce((s -> 'patch' ->> 'sort_order')::int, 0), v_user);
+    else
+      update meal_buys
+         set how_id = nullif(s -> 'patch' ->> 'how_id', '')::bigint,
+             shop = coalesce(s -> 'patch' ->> 'shop', ''),
+             lines = s -> 'patch' -> 'lines',
+             sort_order = coalesce((s -> 'patch' ->> 'sort_order')::int, 0),
+             transaction_id = case when t ->> 'op' = 'none' then transaction_id else v_tx end
+       where id = v_buy and meal_id = v_meal;
+      if not found then
+        insert into meal_buys (meal_id, how_id, shop, lines, transaction_id, sort_order, created_by)
+        values (v_meal, nullif(s -> 'patch' ->> 'how_id', '')::bigint, coalesce(s -> 'patch' ->> 'shop', ''),
+                s -> 'patch' -> 'lines', v_tx, coalesce((s -> 'patch' ->> 'sort_order')::int, 0), v_user);
+      end if;
+    end if;
+  end loop;
+
+  return v_meal;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles

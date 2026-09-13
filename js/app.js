@@ -10,7 +10,7 @@ import * as push from './push.js';
 import * as anniv from './anniv.js';
 import * as meal from './meal.js';
 
-const APP_VERSION = 'v18'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v19'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {

@@ -454,6 +454,7 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 /* 식비 시트: '쓴 돈' 세트(어떻게) 안에 품목 줄이 여러 개 */
 .meal-set { display: flex; flex-direction: column; gap: 10px; margin-bottom: 6px; }
 .meal-set .set-items { display: flex; flex-direction: column; gap: 8px; }
+.meal-set input[readonly] { color: var(--muted); }
 .meal-set .row > input.price { flex: 0 0 96px; text-align: right; font-variant-numeric: tabular-nums; }
 .meal-set .set-sum { margin-left: auto; font-variant-numeric: tabular-nums; }
 #meal-total { font-size: 13px; }

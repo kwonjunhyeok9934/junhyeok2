@@ -231,6 +231,20 @@ export function nextOccurrence(date, today, repeat = true) {
 // 품목 가격이 원본이고 가계부 거래에는 세트 합계가 들어간다. 세트 하나 : 거래 하나.
 
 export const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner', 'night'];
+
+// 컬리·쿠팡·마트·편의점은 카테고리 이름이 곧 가게다. 이 셋만 갈 때마다 가게가 다르다.
+export const HOW_NEEDS_SHOP = ['배달', '포장', '외식'];
+// 배달만 배달료 칸을 품목 맨 밑에 기본으로 둔다.
+export const HOW_HAS_FEE = ['배달'];
+export const FEE_LABEL = '배달료';
+
+export const howNeedsShop = (name) => HOW_NEEDS_SHOP.includes(String(name ?? '').trim());
+export const howHasFee = (name) => HOW_HAS_FEE.includes(String(name ?? '').trim());
+
+// 저장할 품목 줄. 값이 안 적힌 배달료 칸은 버린다 (기본으로 놓인 빈 칸이라).
+export function dropEmptyFee(lines) {
+  return (lines ?? []).filter((l) => !(String(l?.name ?? '').trim() === FEE_LABEL && !Number(l?.amount)));
+}
 export const SLOT_LABEL = { breakfast: '아침', lunch: '점심', dinner: '저녁', night: '야식', grocery: '장보기' };
 
 // 그 날짜가 속한 주의 월요일. (스케줄 탭 달력은 일요일 시작이지만 식비는 월요일 시작이다.)
@@ -312,9 +326,10 @@ const cut = (str, n) => (str.length > n ? str.slice(0, n) : str);
 
 // 가계부에 남길 메모. 조각마다 먼저 자르고 합친다 —
 // 합친 뒤에 자르면 긴 메뉴가 세트를 구별하는 꼬리(어떻게·산 것)를 다 먹는다.
-export function mealBuyMemo({ slot, menu, how, lines }) {
-  const bought = cleanLines(lines).map((l) => l.name).filter(Boolean).join(', ');
-  return [SLOT_LABEL[slot] ?? '', cut(String(menu ?? '').trim(), 24), String(how ?? '').trim(), cut(bought, 20)]
+// 가게 이름이 있으면 품목 목록보다 그쪽이 그 지출을 더 잘 알려 준다.
+export function mealBuyMemo({ slot, menu, how, shop, lines }) {
+  const tail = String(shop ?? '').trim() || cleanLines(lines).map((l) => l.name).filter(Boolean).join(', ');
+  return [SLOT_LABEL[slot] ?? '', cut(String(menu ?? '').trim(), 24), String(how ?? '').trim(), cut(tail, 20)]
     .filter(Boolean)
     .join(' · ')
     .slice(0, 60);
@@ -397,8 +412,9 @@ export function planMealSave(before, input, cats) {
   const buys = [];
 
   (input.buys ?? []).forEach((raw, i) => {
-    const lines = cleanLines(raw.lines);
-    if (!lines.length) return; // 품목이 하나도 없는 세트는 저장하지 않는다
+    const lines = cleanLines(dropEmptyFee(raw.lines));
+    const shop = String(raw.shop ?? '').trim();
+    if (!lines.length && !shop) return; // 아무것도 안 적은 세트는 저장하지 않는다
     const was = raw.id != null ? wasById.get(raw.id) : null;
     if (was) kept.add(was.id);
 
@@ -407,7 +423,7 @@ export function planMealSave(before, input, cats) {
       amount,
       category_id: resolveMealCategoryId(cats, was?.tx ?? null),
       date: input.date,
-      memo: mealBuyMemo({ slot: input.slot, menu: input.menu, how: howName.get(raw.howId) ?? '', lines }),
+      memo: mealBuyMemo({ slot: input.slot, menu: input.menu, how: howName.get(raw.howId) ?? '', shop, lines }),
     };
     const txId = was?.transaction_id ?? raw.transactionId ?? null;
 
@@ -417,7 +433,7 @@ export function planMealSave(before, input, cats) {
     else if (txId) tx = { op: 'delete', id: txId }; // 값이 0이 됐으면 거래만 지우고 세트는 남긴다
     else tx = { op: 'none', id: null };
 
-    buys.push({ id: raw.id ?? null, patch: { how_id: raw.howId ?? null, lines, sort_order: i }, tx });
+    buys.push({ id: raw.id ?? null, patch: { how_id: raw.howId ?? null, shop, lines, sort_order: i }, tx });
   });
 
   return {
