@@ -513,8 +513,12 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 /* 직접 칠한 곳은 연하게, 여행 기록이 있는 곳은 진하게 */
 #map-layer path.been { fill: color-mix(in srgb, var(--accent) 42%, var(--line)); }
 #map-layer path.trip { fill: var(--accent); }
+/* 지역 이름표 — 확대하면 작은 곳까지 나온다 (크기는 travel.js 가 배율에 맞춰 잡는다) */
+#map-labels { pointer-events: none; stroke: var(--card); paint-order: stroke; stroke-linejoin: round; }
+#map-labels text { fill: var(--text-2); text-anchor: middle; dominant-baseline: central; font-weight: 600; }
+#map-labels text.on { fill: var(--text); }
 .map-tools {
-  position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 2px;
+  position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 2px;
   background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--line);
   border-radius: 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
 }
@@ -566,3 +570,9 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .trip-spend { display: flex; align-items: baseline; gap: 4px; }
 .trip-spend strong { font-size: 24px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .trip-spend span { color: var(--muted); font-size: 14px; }
+
+/* 여행 상세의 작은 지도 — 어디쯤인지만 보여 준다 */
+.mini-map { width: 100%; display: block; border-radius: 12px; background: var(--bg); margin-top: 12px; }
+.mini-map path { fill: var(--line); stroke: var(--card); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.mini-map path.on { fill: var(--accent); }
+.mini-map text { fill: var(--text); text-anchor: middle; dominant-baseline: central; font-weight: 700; stroke: var(--card); paint-order: stroke; stroke-linejoin: round; }

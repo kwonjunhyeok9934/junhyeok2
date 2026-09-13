@@ -3,8 +3,11 @@
 // 여행 중에 쓴 돈은 따로 적지 않는다 — 가계부에서 그 기간을 더해 보여 준다.
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic } from './ui.js';
-import { REGIONS } from './koreamap.js';
+import { VIEWBOX, REGIONS } from './koreamap.js';
 import { todayLocal, formatWon, tripLabel, tripNights, tripStatus, sortTrips, tripsByRegion } from './calc.js';
+
+const [, , MAPW, MAPH] = VIEWBOX.split(' ').map(Number);
+const BY_CODE = new Map(REGIONS.map((r) => [r.c, r]));
 
 const state = {
   trips: [],
@@ -230,6 +233,7 @@ function renderDetail() {
       <div class="chips read">${(trip.regions ?? [])
         .map((r) => `<span class="chip">${escapeHtml(r.name || r.code)}</span>`)
         .join('') || '<span class="hint">지역을 안 골랐어요</span>'}</div>
+      ${miniMap(trip)}
       ${trip.memo ? `<p class="trip-memo">${escapeHtml(trip.memo)}</p>` : ''}
     </section>
 
@@ -256,6 +260,43 @@ function renderDetail() {
     </section>
 
     <button type="button" class="btn wide danger" data-act="remove">이 여행 삭제</button>`;
+}
+
+// 여행 지역 언저리만 잘라 보여 주는 작은 지도. "여기가 어디쯤" 만 알면 된다.
+function miniMap(trip) {
+  const mine = (trip.regions ?? []).map((r) => BY_CODE.get(r.code)).filter(Boolean);
+  if (!mine.length) return '';
+  const x0 = Math.min(...mine.map((r) => r.b[0]));
+  const y0 = Math.min(...mine.map((r) => r.b[1]));
+  const x1 = Math.max(...mine.map((r) => r.b[0] + r.b[2]));
+  const y1 = Math.max(...mine.map((r) => r.b[1] + r.b[3]));
+  const ratio = 16 / 10;
+
+  // 지역만 딱 맞추면 어디인지 알 수 없다. 둘레를 넉넉히 두고, 너무 멀지도 가깝지도 않게 자른다.
+  let w = Math.min(Math.max(Math.max(x1 - x0, (y1 - y0) * ratio) * 2.6, 560), MAPW);
+  let h = w / ratio;
+  if (h > MAPH) {
+    h = MAPH;
+    w = h * ratio;
+  }
+  // 지도 밖으로 나가도 그냥 둔다 — 여백은 바다처럼 보이고, 여행지가 늘 한가운데 온다.
+  const vx = (x0 + x1) / 2 - w / 2;
+  const vy = (y0 + y1) / 2 - h / 2;
+
+  const near = REGIONS.filter(
+    (r) => r.b[0] < vx + w && r.b[0] + r.b[2] > vx && r.b[1] < vy + h && r.b[1] + r.b[3] > vy,
+  );
+  const codes = new Set(mine.map((r) => r.c));
+  return `
+    <svg class="mini-map" viewBox="${vx} ${vy} ${w} ${h}" role="img" aria-label="여행 지역 지도">
+      ${near.map((r) => `<path class="${codes.has(r.c) ? 'on' : ''}" d="${r.d}"/>`).join('')}
+      ${mine
+        .map(
+          (r) =>
+            `<text x="${r.p[0]}" y="${r.p[1]}" font-size="${Math.round(w / 24)}" stroke-width="${Math.round(w / 150)}">${escapeHtml(r.n)}</text>`,
+        )
+        .join('')}
+    </svg>`;
 }
 
 function itemRow(it) {

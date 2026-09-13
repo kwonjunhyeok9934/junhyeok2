@@ -78,13 +78,16 @@ def simplify(data):
 def project(simple):
     """지역별 바깥 경계선을 투영 좌표로. 먼 섬은 버리고 울릉도는 당겨 온다."""
     k = math.cos(math.radians(36.2))
-    rings, skipped = {}, 0
+    rings, skipped, label = {}, 0, {}
     for feat in simple['features']:
         code = str(feat['id'])
         g = shape(feat['geometry'])
         polys = list(g.geoms) if isinstance(g, MultiPolygon) else [g]
         shift = ULLEUNG[1] - polys[0].centroid.x if code == ULLEUNG[0] else 0
         out = []
+        big = max(polys, key=lambda q: q.area)
+        inside = big.representative_point()
+        label[code] = ((inside.x + shift) * k, -inside.y)
         for poly in polys:
             lon = poly.centroid.x + shift
             if not (CORE[0] <= lon <= CORE[1] or code == ULLEUNG[0]):
@@ -94,7 +97,11 @@ def project(simple):
         if out:
             rings[code] = out
     print(f'먼 섬 {skipped}개 제외', file=sys.stderr)
-    return rings
+    return rings, label
+
+
+def to_xy(pt, minx, miny, scale):
+    return [round((pt[0] - minx) * scale), round((pt[1] - miny) * scale)]
 
 
 def to_path(ring, minx, miny, scale):
@@ -112,7 +119,7 @@ def to_path(ring, minx, miny, scale):
 
 def main():
     data, names = load()
-    rings = project(simplify(data))
+    rings, label = project(simplify(data))
 
     xs = [x for rs in rings.values() for r in rs for x, _ in r]
     ys = [y for rs in rings.values() for r in rs for _, y in r]
@@ -132,17 +139,25 @@ def main():
         parts.sort(reverse=True, key=lambda t: t[0])
         keep = [parts[0][1]] + [d for a, d in parts[1:] if a >= MIN_AREA]   # 본섬은 작아도 남긴다
         dropped += len(parts) - len(keep)
-        regions.append((code, names[code], SIDO[code[:2]], ''.join(keep)))
+        d = ''.join(keep)
+        xs2 = [int(n) for n in re.findall(r'-?\d+', d)]
+        bx, by = min(xs2[0::2]), min(xs2[1::2])
+        box = [bx, by, max(xs2[0::2]) - bx, max(xs2[1::2]) - by]
+        regions.append((code, names[code], SIDO[code[:2]], d, to_xy(label[code], minx, miny, scale), box))
 
     print(f'작은 섬 {dropped}개 생략', file=sys.stderr)
-    body = ',\n'.join('  { c: "%s", n: "%s", s: "%s", d: "%s" }' % r for r in regions)
+    body = ',\n'.join(
+        '  { c: "%s", n: "%s", s: "%s", p: [%d, %d], b: [%d, %d, %d, %d], d: "%s" }'
+        % (r[0], r[1], r[2], r[4][0], r[4][1], *r[5], r[3])
+        for r in regions
+    )
     js = f'''// 대한민국 시·군·구 지도 — 여행 탭에서 다녀온 곳을 색칠한다.
 // 자동 생성 파일이라 손으로 고치지 않는다. 다시 만드는 방법은 docs/지도_데이터.md 참고.
 // 원본: 통계청 2018 시군구 경계 (southkorea/southkorea-maps, KOSTAT — 자유 이용)
 
 export const VIEWBOX = '0 0 {round(W)} {height}';
 
-// c: 코드(저장 키) · n: 이름 · s: 시도 · d: SVG path
+// c: 코드(저장 키) · n: 이름 · s: 시도 · p: 이름표 자리 · b: 경계 상자[x, y, 너비, 높이] · d: SVG path
 export const REGIONS = [
 {body},
 ];

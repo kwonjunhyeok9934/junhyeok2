@@ -12,7 +12,7 @@ import * as meal from './meal.js';
 import * as travel from './travel.js';
 import * as trip from './trip.js';
 
-const APP_VERSION = 'v21'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v22'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -228,7 +228,7 @@ function bindTabs() {
     if (tab === 'schedule') schedule.openNew();
     else if (tab === 'fixed') fixed.openNew();
     else if (tab === 'meal') meal.openNew();
-    else if (tab === 'trips') trip.openNew();
+    else if (tab === 'trips' || tab === 'travel') trip.openNew();
     else ledger.openNew(); // 홈·가계부는 지출 입력
   });
 }
@@ -263,7 +263,7 @@ function routeHash() {
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.group === group));
   renderSubtabs(group, tab);
   $('#page-title').textContent = TABS[tab].title;
-  $('#btn-add').hidden = tab === 'todo' || tab === 'travel';
+  $('#btn-add').hidden = tab === 'todo';
 }
 
 // 한 칸에 화면이 둘 이상일 때만 위쪽에 작은 탭을 보여준다.
