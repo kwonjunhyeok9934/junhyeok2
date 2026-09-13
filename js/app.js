@@ -12,7 +12,7 @@ import * as meal from './meal.js';
 import * as travel from './travel.js';
 import * as trip from './trip.js';
 
-const APP_VERSION = 'v19'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v20'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -194,6 +194,7 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => fixed.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'anniversaries' }, () => home.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'meals' }, () => meal.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_buys' }, () => { meal.refresh(); ledger.refresh(); })
     .subscribe();
   // 여행 표는 나중에 생겼다. 아직 SQL 을 안 돌린 사람도 위 구독은 멀쩡하도록 따로 둔다.
   const travelCh = sb

@@ -138,7 +138,7 @@ export async function refresh() {
     el.empty.hidden = true;
     el.past.innerHTML = '';
     el.upcoming.innerHTML = missingTable(err)
-      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 25번 섹션을 실행해 주세요.</p>`
+      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 29번 섹션을 실행해 주세요.</p>`
       : `<div class="retry">불러오지 못했어요<br>
           <button type="button" class="btn small" data-retry>다시 시도</button>
         </div>`;
@@ -436,7 +436,7 @@ async function save() {
     openTrip(id);
   } catch (err) {
     console.error(err);
-    toast(missingTable(err) ? '여행 표가 아직 없어요. schema.sql 25번을 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
+    toast(missingTable(err) ? '여행 표가 아직 없어요. schema.sql 29번을 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
   } finally {
     el.save.disabled = false;
   }

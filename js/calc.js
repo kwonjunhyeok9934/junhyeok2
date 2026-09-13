@@ -226,10 +226,25 @@ export function nextOccurrence(date, today, repeat = true) {
 }
 
 // ---- 식비(주간) ---------------------------------------------------------------
-// 금액은 meals 에 없다. 돈을 쓴 끼니는 transactions 행 하나와 1:1 로 연결되고,
-// 조회할 때 m.tx 로 함께 딸려 온다. 연결이 없으면 돈을 안 쓴 끼니다.
+// 한 끼(meal) = 날짜·끼니·메뉴·누가·어디서 하나씩.
+// 세트(buy) = '어떻게 + 품목들' 하나. 한 끼에 0개도, 여러 개도 된다.
+// 품목 가격이 원본이고 가계부 거래에는 세트 합계가 들어간다. 세트 하나 : 거래 하나.
 
 export const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner', 'night'];
+
+// 컬리·쿠팡·마트·편의점은 카테고리 이름이 곧 가게다. 이 셋만 갈 때마다 가게가 다르다.
+export const HOW_NEEDS_SHOP = ['배달', '포장', '외식'];
+// 배달만 배달료 칸을 품목 맨 밑에 기본으로 둔다.
+export const HOW_HAS_FEE = ['배달'];
+export const FEE_LABEL = '배달료';
+
+export const howNeedsShop = (name) => HOW_NEEDS_SHOP.includes(String(name ?? '').trim());
+export const howHasFee = (name) => HOW_HAS_FEE.includes(String(name ?? '').trim());
+
+// 저장할 품목 줄. 값이 안 적힌 배달료 칸은 버린다 (기본으로 놓인 빈 칸이라).
+export function dropEmptyFee(lines) {
+  return (lines ?? []).filter((l) => !(String(l?.name ?? '').trim() === FEE_LABEL && !Number(l?.amount)));
+}
 export const SLOT_LABEL = { breakfast: '아침', lunch: '점심', dinner: '저녁', night: '야식', grocery: '장보기' };
 
 // 그 날짜가 속한 주의 월요일. (스케줄 탭 달력은 일요일 시작이지만 식비는 월요일 시작이다.)
@@ -259,27 +274,31 @@ export function slotOfHour(h) {
   return 'night';
 }
 
-// 가계부에 남길 메모. 빈 조각은 뺀다. → '점심 · 제육덮밥 · 배달'
-export function mealMemo({ slot, menu, bought, cat }) {
-  return [SLOT_LABEL[slot] ?? '', (menu || bought || '').trim(), cat || '']
-    .filter(Boolean)
-    .join(' · ')
-    .slice(0, 60);
+// 품목 줄 정리: 이름·가격이 둘 다 빈 줄은 버리고 금액은 0 이상 정수로.
+export function cleanLines(lines) {
+  return (lines ?? [])
+    .map((l) => ({
+      name: String(l?.name ?? '').trim(),
+      amount: Math.max(0, Math.trunc(Number(l?.amount) || 0)),
+    }))
+    .filter((l) => l.name || l.amount > 0);
 }
 
-// 가계부에 넣을 분류. 이미 연결된 거래가 있으면 그 분류를 유지한다
-// (가계부에서 사람이 바꿔 놓은 것을 식비 탭이 되돌리지 않는다).
-export function resolveMealCategoryId(cats, editingTx) {
-  if (editingTx) return editingTx.category_id ?? null;
-  return cats.find((c) => c.kind === 'expense' && c.name === '식비')?.id ?? null;
+// 세트에 적힌 품목 가격의 합 = 식비 탭이 원본으로 삼는 값.
+export function buyTotal(buy) {
+  return cleanLines(buy?.lines).reduce((a, l) => a + l.amount, 0);
 }
 
-// 그 끼니에 쓴 돈. 가계부에서 '수입'으로 바뀐 거래는 세지 않는다.
-export function mealAmount(m) {
-  return m.tx && m.tx.kind === 'expense' ? m.tx.amount : 0;
+// 실제로 가계부에 잡혀 있는 금액. 연결이 끊겼거나 수입으로 바뀌었으면 0.
+export function buyAmount(buy) {
+  return buy?.tx && buy.tx.kind === 'expense' ? buy.tx.amount : 0;
 }
 
-// 'date|slot' 로 묶는다. 한 끼에 여러 건이면 만든 순서대로.
+export function mealAmount(meal) {
+  return (meal?.buys ?? []).reduce((a, b) => a + buyAmount(b), 0);
+}
+
+// 'date|slot' 로 묶는다. 같은 칸에 기록이 여럿이면(둘이 따로 먹은 날) 만든 순서대로.
 export function groupMealsBySlot(meals) {
   const map = new Map();
   for (const m of meals) {
@@ -293,16 +312,49 @@ export function groupMealsBySlot(meals) {
   return map;
 }
 
-// { total, count(기록 수), paid(돈 쓴 끼니), home(돈 안 쓴 끼니) }
+// 임베드로 딸려 온 배열은 순서가 보장되지 않는다.
+export function sortMealBuys(buys) {
+  return (buys ?? []).slice().sort(
+    (a, b) =>
+      (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+      (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0) ||
+      (a.id ?? 0) - (b.id ?? 0),
+  );
+}
+
+const cut = (str, n) => (str.length > n ? str.slice(0, n) : str);
+
+// 가계부에 남길 메모. 조각마다 먼저 자르고 합친다 —
+// 합친 뒤에 자르면 긴 메뉴가 세트를 구별하는 꼬리(어떻게·산 것)를 다 먹는다.
+// 가게 이름이 있으면 품목 목록보다 그쪽이 그 지출을 더 잘 알려 준다.
+export function mealBuyMemo({ slot, menu, how, shop, lines }) {
+  const tail = String(shop ?? '').trim() || cleanLines(lines).map((l) => l.name).filter(Boolean).join(', ');
+  return [SLOT_LABEL[slot] ?? '', cut(String(menu ?? '').trim(), 24), String(how ?? '').trim(), cut(tail, 20)]
+    .filter(Boolean)
+    .join(' · ')
+    .slice(0, 60);
+}
+
+// 주간 목록의 보조 줄. '외식' 은 어디서·어떻게 양쪽에 있어서 그냥 이으면 '외식 · 외식' 이 된다.
+export function mealSubline(placeName, howNames) {
+  const place = String(placeName ?? '').trim();
+  const hows = (howNames ?? []).map((n) => String(n ?? '').trim()).filter((n) => n && n !== place);
+  const tail = hows.length > 2 ? `${hows[0]} 외 ${hows.length - 1}` : hows.join(', ');
+  return [place, tail].filter(Boolean).join(' · ');
+}
+
+// { total, count(끼니 수), paid(돈 쓴 끼니), free(돈 안 쓴 끼니), buys(세트 수) }
 export function sumMeals(meals) {
   let total = 0;
   let paid = 0;
+  let buys = 0;
   for (const m of meals) {
     const a = mealAmount(m);
     total += a;
+    buys += (m.buys ?? []).length;
     if (a > 0) paid++;
   }
-  return { total, count: meals.length, paid, home: meals.length - paid };
+  return { total, count: meals.length, paid, free: meals.length - paid, buys };
 }
 
 // Map<date, 그날 합계>
@@ -312,63 +364,99 @@ export function sumMealsByDate(meals) {
   return map;
 }
 
-// 카테고리별 { id, name, total, count }. 큰 순, 같으면 기록 많은 순.
-export function sumMealsByCategory(meals, categories) {
+// '어떻게' 별 { id, name, total, count }. 큰 순, 같으면 건수 많은 순.
+export function sumMealsByHow(meals, categories) {
   const nameOf = new Map(categories.map((c) => [c.id, c.name]));
   const totals = new Map();
   for (const m of meals) {
-    const key = m.category_id ?? null;
-    const cur = totals.get(key) ?? { total: 0, count: 0 };
-    cur.total += mealAmount(m);
-    cur.count += 1;
-    totals.set(key, cur);
+    for (const b of m.buys ?? []) {
+      const key = b.how_id ?? null;
+      const cur = totals.get(key) ?? { total: 0, count: 0 };
+      cur.total += buyAmount(b);
+      cur.count += 1;
+      totals.set(key, cur);
+    }
   }
   return [...totals.entries()]
     .map(([id, v]) => ({ id, name: id === null ? '기타' : (nameOf.get(id) ?? '기타'), ...v }))
     .sort((a, b) => b.total - a.total || b.count - a.count);
 }
 
-// 저장할 때 두 표에 무엇을 쓸지 정한다. DB·DOM 을 모른다.
-// before: { id, transaction_id, tx } | null,  input: { date, slot, menu, bought, categoryId, amount }
-// link: 'new'(새 거래 id 를 넣는다) | 'null'(연결을 끊는다) | 'keep'(그대로)
-export function planMealSave(before, input, { categoryId, memo }) {
-  const amount = Math.max(0, Math.trunc(input.amount || 0));
-  const txId = before?.transaction_id ?? null;
-  const patch = {
-    date: input.date,
-    slot: input.slot,
-    menu: input.menu.trim(),
-    bought: input.bought.trim(),
-    category_id: input.categoryId ?? null,
-  };
+// 가계부에 넣을 분류. 이미 연결된 거래가 있으면 그 분류를 유지한다
+// (가계부에서 사람이 바꿔 놓은 것을 식비 탭이 되돌리지 않는다).
+export function resolveMealCategoryId(cats, editingTx) {
+  if (editingTx) return editingTx.category_id ?? null;
+  return cats.find((c) => c.kind === 'expense' && c.name === '식비')?.id ?? null;
+}
 
-  let tx;
-  let link;
-  if (amount > 0 && txId) {
-    tx = { op: 'update', id: txId, payload: { kind: 'expense', amount, category_id: categoryId, date: input.date, memo } };
-    link = 'keep';
-  } else if (amount > 0) {
-    tx = { op: 'insert', payload: { kind: 'expense', amount, category_id: categoryId, date: input.date, memo } };
-    link = 'new';
-  } else if (txId) {
-    tx = { op: 'delete', id: txId };
-    link = 'null';
-  } else {
-    tx = { op: 'none' };
-    link = 'null';
-  }
+// 이미 연결된 거래가 새 payload 와 완전히 같은지. 같으면 update 를 보내지 않는다.
+function sameTx(tx, payload) {
+  return (
+    !!tx &&
+    tx.kind === 'expense' &&
+    tx.amount === payload.amount &&
+    (tx.category_id ?? null) === (payload.category_id ?? null) &&
+    tx.date === payload.date &&
+    tx.memo === payload.memo
+  );
+}
+
+// 저장할 때 무엇을 쓸지 정한다. DB·DOM 을 모른다.
+// before: { id, buys: [{ id, how_id, lines, transaction_id, tx }] } | null
+// input:  { date, slot, menu, eater, placeId, buys: [{ id, howId, transactionId, lines }] }
+// 반환값이 그대로 sb.rpc('save_meal', { p }) 의 인자가 된다.
+export function planMealSave(before, input, cats) {
+  const howName = new Map(cats.map((c) => [c.id, c.name]));
+  const wasById = new Map((before?.buys ?? []).map((b) => [b.id, b]));
+  const kept = new Set();
+  const buys = [];
+
+  (input.buys ?? []).forEach((raw, i) => {
+    const lines = cleanLines(dropEmptyFee(raw.lines));
+    const shop = String(raw.shop ?? '').trim();
+    if (!lines.length && !shop) return; // 아무것도 안 적은 세트는 저장하지 않는다
+    const was = raw.id != null ? wasById.get(raw.id) : null;
+    if (was) kept.add(was.id);
+
+    const amount = lines.reduce((a, l) => a + l.amount, 0);
+    const payload = {
+      amount,
+      category_id: resolveMealCategoryId(cats, was?.tx ?? null),
+      date: input.date,
+      memo: mealBuyMemo({ slot: input.slot, menu: input.menu, how: howName.get(raw.howId) ?? '', shop, lines }),
+    };
+    const txId = was?.transaction_id ?? raw.transactionId ?? null;
+
+    let tx;
+    if (amount > 0 && txId) tx = sameTx(was?.tx, payload) ? { op: 'none', id: txId } : { op: 'update', id: txId, payload };
+    else if (amount > 0) tx = { op: 'insert', id: null, payload };
+    else if (txId) tx = { op: 'delete', id: txId }; // 값이 0이 됐으면 거래만 지우고 세트는 남긴다
+    else tx = { op: 'none', id: null };
+
+    buys.push({ id: raw.id ?? null, patch: { how_id: raw.howId ?? null, shop, lines, sort_order: i }, tx });
+  });
 
   return {
-    tx,
-    meal: before ? { op: 'update', id: before.id, patch, link } : { op: 'insert', patch, link },
+    meal: {
+      id: before?.id ?? null,
+      patch: {
+        date: input.date,
+        slot: input.slot,
+        menu: String(input.menu ?? '').trim(),
+        eater: input.eater ?? null,
+        place_id: input.placeId ?? null,
+      },
+    },
+    buys,
+    removed: (before?.buys ?? []).map((b) => b.id).filter((id) => !kept.has(id)),
   };
 }
 
-// 지울 때는 거래를 먼저 지운다 (가계부에 고아가 남지 않게).
+// 끼니를 지우면 cascade + 트리거가 세트와 거래까지 지운다. txIds 는 확인 문구용.
 export function planMealDelete(before) {
   return {
-    tx: before?.transaction_id ? { op: 'delete', id: before.transaction_id } : { op: 'none' },
-    meal: { op: 'delete', id: before.id },
+    mealId: before.id,
+    txIds: (before?.buys ?? []).map((b) => b.transaction_id).filter((id) => id != null),
   };
 }
 

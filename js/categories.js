@@ -58,11 +58,11 @@ export async function moveCategory(list, id, dir) {
   }
 }
 
-const KIND_LABEL = { expense: '지출', income: '수입', fixed: '고정비', meal: '식비' };
+const KIND_LABEL = { expense: '지출', income: '수입', fixed: '고정비', meal_where: '식비 · 어디서', meal_how: '식비 · 어떻게' };
 
 // container 안에 지출/수입 두 그룹을 그린다. 변경이 성공하면 onChanged() 를 부른다.
 export function renderCategoryManager(container, list, { onChanged, onError }) {
-  container.innerHTML = ['expense', 'income', 'fixed', 'meal']
+  container.innerHTML = ['expense', 'income', 'fixed', 'meal_where', 'meal_how']
     .map((kind) => {
       const rows = list
         .filter((c) => c.kind === kind)

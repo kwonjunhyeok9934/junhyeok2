@@ -208,12 +208,11 @@ export async function refresh() {
         .order('created_at', { ascending: false })
         .then(unwrap),
       // 식비 탭에서 온 거래에 표시를 붙이려고 함께 본다.
-      // 아직 meals 표가 없어도 가계부가 죽지 않도록 조용히 빈 배열로 떨어진다.
+      // 날짜로 좁히려면 meal_buys → meals 조인이 필요한데, 2인 앱에서는 id 한 컬럼을
+      // 전부 받는 편이 싸고 확실하다. 표가 아직 없어도 가계부가 죽지 않게 빈 배열로 떨어진다.
       sb
-        .from('meals')
+        .from('meal_buys')
         .select('transaction_id')
-        .gte('date', start)
-        .lte('date', end)
         .not('transaction_id', 'is', null)
         .then(unwrap)
         .catch(() => []),

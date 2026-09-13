@@ -467,6 +467,18 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .tag { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
 .slot-add { flex: none; width: 24px; text-align: center; font-size: 15px; color: var(--muted); padding: 0; }
 
+/* 식비 시트: '쓴 돈' 세트(어떻게) 안에 품목 줄이 여러 개 */
+.meal-set { display: flex; flex-direction: column; gap: 10px; margin-bottom: 6px; }
+.meal-set .set-items { display: flex; flex-direction: column; gap: 8px; }
+.meal-set input[readonly] { color: var(--muted); }
+.meal-set .row > input.price { flex: 0 0 96px; text-align: right; font-variant-numeric: tabular-nums; }
+.meal-set .set-sum { margin-left: auto; font-variant-numeric: tabular-nums; }
+#meal-total { font-size: 13px; }
+
+/* 이름이 길어도 칸이 밖으로 밀려나지 않게 (할일·일정·고정비의 기존 seg 에도 적용된다) */
+.seg label { min-width: 0; }
+.seg span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ---- 여행 ---- */
 .travel-sum { margin-bottom: 12px; }
 .travel-head { display: flex; justify-content: space-between; align-items: baseline; }
