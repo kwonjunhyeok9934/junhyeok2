@@ -472,11 +472,17 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .meal-head .tx-cat { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .meal-head .tag { flex: none; }
 /* keep-all 이 없으면 한글이 '양 파' 처럼 단어 중간에서 잘린다. */
-.meal-buy { color: var(--text-2); font-size: 13px; line-height: 1.5; margin-top: 4px; word-break: keep-all; }
-.meal-buy .tag { margin-left: 0; margin-right: 2px; }
+/* 뱃지는 왼쪽에 고정, 품목은 오른쪽에 한 줄씩 쌓여 열이 맞는다 */
+.meal-buy { display: flex; align-items: flex-start; gap: 6px; margin-top: 5px; }
+.meal-buy .tag { margin-left: 0; flex: none; }
+.buy-items { display: flex; flex-direction: column; flex: 1; min-width: 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+/* 이름은 줄지 않게 자르고 가격은 오른쪽에 붙여 열을 맞춘다 */
+.buy-item { display: flex; gap: 8px; }
+.buy-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.buy-item .pr { flex: none; font-variant-numeric: tabular-nums; }
+.buy-items .shop { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag.who { margin-left: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tag.soft { background: var(--bg); color: var(--text-2); }
-.meal-row > .tx-amount { padding-top: 1px; }
+.meal-head .tx-amount { flex: none; font-size: 17px; }
 .tag { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
 .slot-add { flex: none; width: 24px; text-align: center; font-size: 15px; color: var(--muted); padding: 0; }
 
