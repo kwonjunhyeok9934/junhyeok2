@@ -139,6 +139,17 @@
         <div class="sum-item"><span class="sum-label">차이</span><strong id="meal-sum-diff">0</strong></div>
       </div>
 
+      <details id="meal-pantry" class="card" hidden>
+        <summary><span>사 둔 것</span><span id="meal-pantry-count"></span></summary>
+        <div id="meal-pantry-list"></div>
+        <p id="meal-pantry-note" class="hint" hidden></p>
+        <div class="row" style="margin-top:10px">
+          <button type="button" id="meal-pantry-add" class="btn small primary">＋ 담기</button>
+          <button type="button" id="meal-pantry-done" class="btn small" hidden>다 쓴 것</button>
+        </div>
+      </details>
+      <div id="meal-pantry-notice" hidden></div>
+
       <p id="meal-onboard" class="hint" hidden>칸을 눌러 뭘 먹었는지 적어 보세요. 금액은 안 적어도 돼요.</p>
       <div id="meal-week"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
 
@@ -380,6 +391,34 @@
       <div class="row actions">
         <button type="button" id="meal-delete" class="btn danger" hidden>삭제</button>
         <button type="submit" id="meal-save" class="btn primary grow" disabled>저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 사 둔 것 시트 (윙잇·컬리에서 산 품목을 미리 담아 둔다) -->
+<div id="sheet-pantry" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <form id="pantry-form">
+      <div>
+        <div class="field-label">어디서 샀어요?</div>
+        <div id="pantry-hows" class="chips"></div>
+      </div>
+
+      <input id="pantry-date" type="date" required>
+
+      <div>
+        <div class="field-label row"><span>산 품목</span><span id="pantry-total" class="tx-amount"></span></div>
+        <div id="pantry-items" class="set-items"></div>
+      </div>
+
+      <p class="hint">여기 적은 가격은 아직 가계부에 안 들어가요. 식비에서 이 품목으로 처음 밥을 먹을 때 한 번만 들어가요.</p>
+      <p id="pantry-charged" class="hint" hidden>이미 가계부에 들어간 품목이라 가격은 못 바꿔요. 고치려면 그 끼니에서 고쳐 주세요.</p>
+
+      <div class="row actions">
+        <button type="button" id="pantry-delete" class="btn danger" hidden>삭제</button>
+        <button type="submit" id="pantry-save" class="btn primary grow" disabled>저장</button>
       </div>
     </form>
   </div>

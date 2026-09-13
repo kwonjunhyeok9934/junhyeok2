@@ -191,11 +191,13 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .sum-label { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
 .sum-item strong { display: block; font-size: 16px; margin-top: 4px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .income { color: var(--income); }
-#cat-totals, #meal-cat-totals { margin-bottom: 14px; padding: 14px 16px; }
-#cat-totals summary, #meal-cat-totals summary { cursor: pointer; font-weight: 600; color: var(--text-2); font-size: 14px; list-style: none; display: flex; justify-content: space-between; }
-#cat-totals summary::-webkit-details-marker, #meal-cat-totals summary::-webkit-details-marker { display: none; }
-#cat-totals summary::after, #meal-cat-totals summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
-#cat-totals[open] summary::after, #meal-cat-totals[open] summary::after { transform: rotate(180deg); }
+#cat-totals, #meal-cat-totals, #meal-pantry { margin-bottom: 14px; padding: 14px 16px; }
+#cat-totals summary, #meal-cat-totals summary, #meal-pantry summary { cursor: pointer; font-weight: 600; color: var(--text-2); font-size: 14px; list-style: none; display: flex; justify-content: space-between; }
+#cat-totals summary::-webkit-details-marker, #meal-cat-totals summary::-webkit-details-marker,
+#meal-pantry summary::-webkit-details-marker { display: none; }
+#cat-totals summary::after, #meal-cat-totals summary::after, #meal-pantry summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
+#cat-totals[open] summary::after, #meal-cat-totals[open] summary::after,
+#meal-pantry[open] summary::after { transform: rotate(180deg); }
 #cat-totals-list, #meal-cat-list { margin-top: 10px; }
 #cat-totals-list li, #meal-cat-list li { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 
@@ -497,6 +499,44 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 /* 이름이 길어도 칸이 밖으로 밀려나지 않게 (할일·일정·고정비의 기존 seg 에도 적용된다) */
 .seg label { min-width: 0; }
 .seg span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- 사 둔 것 (담아 두고 식비에서 꺼내 쓰는 품목) ---- */
+/* 카드 안 목록: 카테고리 머리(day-head)로 나누고 그 아래 품목 줄 */
+#meal-pantry summary span:last-child { font-weight: 500; color: var(--muted); margin-right: 6px; }
+#meal-pantry-list { margin-top: 6px; }
+#meal-pantry-list .day-head { padding: 12px 0 4px; }
+#meal-pantry-list .day-head .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pantry-row { margin-bottom: 6px; padding: 10px 12px; box-shadow: none; background: var(--bg); gap: 10px; }
+.pantry-row .tx-memo { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.pantry-row .tx-amount { font-size: 15px; }
+.pantry-row.done { opacity: .55; }
+.pantry-row.done .tx-cat { text-decoration: line-through; }
+
+/* 남김 ↔ 다 씀 토글. 목록에서도 세트 안에서도 같은 모양이다. */
+.chip.mini {
+  flex: none; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  border: 0; background: var(--line); color: var(--text-2); cursor: pointer;
+}
+.chip.mini.selected { background: var(--accent); color: #fff; }
+
+/* 세트 안에서 사 둔 것을 꺼내는 드롭다운 */
+.meal-set select {
+  width: 100%; border: 0; background: var(--bg); color: var(--text-2);
+  border-radius: 12px; padding: 12px 14px; font: inherit; letter-spacing: inherit;
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 18px center, right 13px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.meal-set select:focus { outline: 0; box-shadow: 0 0 0 2px var(--accent); }
+
+/* 사 둔 것에서 꺼낸 품목 줄: 칸이 아니라 읽기용이라 글자로만 놓는다 */
+.pantry-line { background: var(--bg); border-radius: 12px; padding: 9px 12px; }
+.pantry-line .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pantry-line .pr { flex: none; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.pantry-line .icon-btn { flex: none; padding: 4px 6px; font-size: 14px; }
+
 
 /* ---- 여행 ---- */
 .travel-sum { margin-bottom: 12px; }

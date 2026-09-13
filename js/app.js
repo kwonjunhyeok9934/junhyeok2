@@ -12,7 +12,7 @@ import * as meal from './meal.js';
 import * as travel from './travel.js';
 import * as trip from './trip.js';
 
-const APP_VERSION = 'v22'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v23'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -204,7 +204,12 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_regions' }, () => trip.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_items' }, () => trip.refresh())
     .subscribe();
-  channels = [main, travelCh];
+  // 사 둔 것도 나중에 생겼다 (31번 SQL). 같은 이유로 따로 둔다.
+  const pantryCh = sb
+    .channel('pantry-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items' }, () => meal.refresh())
+    .subscribe();
+  channels = [main, travelCh, pantryCh];
 }
 
 // ---- 탭 (URL 해시) --------------------------------------------------------

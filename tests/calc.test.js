@@ -9,6 +9,7 @@ import {
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee,
   buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
+  pantryPrice, pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
 } from '../js/calc.js';
 
@@ -379,6 +380,114 @@ test('resolveMealCategoryId: 연결된 거래의 분류를 유지한다', () => 
   assert.equal(resolveMealCategoryId(mealCats, { category_id: 9 }), 9); // 가계부에서 바꾼 분류를 되돌리지 않는다
   assert.equal(resolveMealCategoryId(mealCats, null), 1);               // 없으면 '식비'
   assert.equal(resolveMealCategoryId([], null), null);                  // '식비' 가 없으면 미분류
+});
+
+// ---- 사 둔 것 -----------------------------------------------------------------
+// 담을 때는 가계부에 안 들어가고, 처음 꺼내 먹을 때 한 번만 값이 실린다.
+
+const pantry = [
+  { id: 1, how_id: 10, name: '삼겹살 600g', amount: 12000, bought_on: '2026-09-07', charged_buy_id: null, done: false },
+  { id: 2, how_id: 10, name: '두부', amount: 3000, bought_on: '2026-09-09', charged_buy_id: 91, done: false },
+  { id: 3, how_id: 10, name: '우유', amount: 2500, bought_on: '2026-09-09', charged_buy_id: 91, done: true },
+  { id: 4, how_id: 70, name: '양파 한 망', amount: 5000, bought_on: '2026-09-08', charged_buy_id: null, done: false },
+];
+
+test('pantryPrice: 처음 꺼낼 때만 값이 실린다', () => {
+  assert.equal(pantryPrice(pantry[0]), 12000);          // 아직 아무도 안 가져감
+  assert.equal(pantryPrice(pantry[1]), 0);              // 다른 세트가 이미 냈다
+  assert.equal(pantryPrice(pantry[1], 91), 3000);       // 그 값을 낸 세트를 다시 고치는 중이면 그대로
+  assert.equal(pantryPrice(pantry[1], 92), 0);          // 다른 세트에서는 여전히 0
+  assert.equal(pantryPrice({ amount: -5 }), 0);
+});
+
+test('pantryLine: 세트에 붙일 품목 줄', () => {
+  assert.deepEqual(pantryLine(pantry[0]), { name: '삼겹살 600g', amount: 12000, pantry_id: 1, done: false });
+  assert.deepEqual(pantryLine(pantry[1]), { name: '두부', amount: 0, pantry_id: 2, done: false });
+});
+
+test('pantryChoices: 다 쓴 것·다른 카테고리·이미 고른 것은 빼고 최근 것부터', () => {
+  assert.deepEqual(pantryChoices(pantry, { howId: 10 }).map((c) => c.id), [2, 1]); // 3번은 다 씀, 4번은 마트
+  assert.deepEqual(pantryChoices(pantry, { howId: 10, usedIds: [2] }).map((c) => c.id), [1]);
+  assert.deepEqual(pantryChoices(pantry, { howId: 70 }).map((c) => c.id), [4]);
+  assert.deepEqual(pantryChoices(pantry, { howId: 99 }), []);
+  assert.deepEqual(pantryChoices(null, { howId: 10 }), []);
+  assert.equal(pantryChoices(pantry, { howId: 10 })[0].price, 0); // 두부는 이미 냈다
+});
+
+test('pantryOptionLabel: 값이 남았으면 가격, 이미 냈으면 그렇게', () => {
+  assert.equal(pantryOptionLabel(pantry[0]), '삼겹살 600g · 12,000원');
+  assert.equal(pantryOptionLabel(pantry[1]), '두부 · 이미 냄');
+  assert.equal(pantryOptionLabel(pantry[1], 91), '두부 · 3,000원');
+});
+
+test('usedPantryIds: 지금 고치는 끼니가 이미 쓰고 있는 품목', () => {
+  const sets = [
+    { lines: [{ name: '삼겹살 600g', amount: 12000, pantry_id: 1 }, { name: '소금', amount: 1000 }] },
+    { lines: [{ name: '두부', amount: 0, pantry_id: 2 }] },
+  ];
+  assert.deepEqual(usedPantryIds(sets), [1, 2]);
+  assert.deepEqual(usedPantryIds([]), []);
+  assert.deepEqual(usedPantryIds(null), []);
+});
+
+test('cleanLines: 사 둔 것 꼬리표는 지키고, 직접 적은 줄은 두 칸 그대로', () => {
+  assert.deepEqual(
+    cleanLines([
+      { name: '삼겹살 600g', amount: 12000, pantry_id: '1', done: true },
+      { name: '소금', amount: 1000 },
+      { name: '두부', amount: 0, pantry_id: 2 },
+    ]),
+    [
+      { name: '삼겹살 600g', amount: 12000, pantry_id: 1, done: true },
+      { name: '소금', amount: 1000 },
+      { name: '두부', amount: 0, pantry_id: 2, done: false },
+    ],
+  );
+});
+
+test('buyItemTexts: 또 먹은 줄은 가격 자리에 남김/다 씀', () => {
+  assert.deepEqual(
+    buyItemTexts([
+      { name: '삼겹살 600g', amount: 12000, pantry_id: 1, done: false }, // 값이 실린 줄은 가격 그대로
+      { name: '두부', amount: 0, pantry_id: 2, done: true },
+      { name: '콩나물', amount: 0, pantry_id: 3, done: false },
+      { name: '얻어온 파', amount: 0 },                                   // 직접 적은 줄은 예전 그대로 빈칸
+    ]),
+    [
+      { name: '삼겹살 600g', price: '12,000원' },
+      { name: '두부', price: '다 씀' },
+      { name: '콩나물', price: '남김' },
+      { name: '얻어온 파', price: '' },
+    ],
+  );
+});
+
+test('groupPantryByHow: 칩 순서대로 묶고 최근에 산 것부터', () => {
+  const groups = groupPantryByHow(pantry, mealCats);
+  assert.deepEqual(groups.map((g) => g.name), ['컬리', '마트']);
+  assert.deepEqual(groups[0].items.map((i) => i.id), [3, 2, 1]); // 9/9 두 개 → id 큰 것 먼저, 그 다음 9/7
+  assert.equal(groups[0].total, 17500);
+  assert.deepEqual(groupPantryByHow([{ id: 9, how_id: null, name: '어디선가', amount: 0 }], mealCats)[0].name, '기타');
+});
+
+test('pantryStats: 남은 개수와 아직 가계부에 안 들어간 돈', () => {
+  assert.deepEqual(pantryStats(pantry), { left: 3, done: 1, waiting: 17000 }); // 12000 + 5000
+  assert.deepEqual(pantryStats([]), { left: 0, done: 0, waiting: 0 });
+});
+
+test('planMealSave: 처음 쓴 품목만 가계부로 가고, 또 먹은 품목은 0원이라 거래가 없다', () => {
+  const p = planMealSave(null, {
+    ...base,
+    buys: [
+      { id: null, howId: 10, lines: [pantryLine(pantry[0]), pantryLine(pantry[1])] }, // 12,000 + 0
+      { id: null, howId: 70, lines: [{ name: '두부', amount: 0, pantry_id: 2, done: true }] },
+    ],
+  }, mealCats);
+  assert.equal(p.buys[0].tx.op, 'insert');
+  assert.equal(p.buys[0].tx.payload.amount, 12000);        // 이미 낸 두부는 안 더한다
+  assert.deepEqual(p.buys[0].patch.lines[1], { name: '두부', amount: 0, pantry_id: 2, done: false });
+  assert.deepEqual(p.buys[1].tx, { op: 'none', id: null }); // 0원짜리 세트는 거래를 안 만든다
+  assert.equal(p.buys[1].patch.lines[0].done, true);        // '다 씀' 은 그대로 실려 간다
 });
 
 // ---- planMealSave -------------------------------------------------------------
