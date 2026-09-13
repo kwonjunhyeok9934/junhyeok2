@@ -26,6 +26,7 @@ const state = {
   plans: [],          // 그 여행의 일정 줄
   plan: null,         // 시트에서 고치는 중인 일정 줄
   planDate: '',       // 시트에서 고른 날
+  packingOpen: null,  // 준비물 접기: null 이면 '여행 전에만 펼침', true/false 면 직접 접었다 편 것
 };
 
 let el = null;
@@ -235,6 +236,7 @@ export async function openTrip(id) {
   state.viewing = id;
   state.packed = new Set();
   state.plans = [];
+  state.packingOpen = null;
   el.viewTitle.textContent = trip.title;
   el.view.hidden = false;
   renderDetail();      // 뼈대 먼저
@@ -317,7 +319,7 @@ function renderDetail() {
       ${trip.memo ? `<p class="trip-memo">${escapeHtml(trip.memo)}</p>` : ''}
     </section>
 
-    ${packingCard()}
+    ${packingCard(st)}
     ${planCard(trip)}
 
     <button type="button" class="btn small wide" data-act="ledger">가계부에서 이 기간 보기</button>
@@ -325,12 +327,14 @@ function renderDetail() {
 }
 
 // 준비물: 공용 체크리스트를 그대로 가져와 체크만 한다.
-function packingCard() {
+// 떠나고 나면 더 볼 일이 없어서 여행이 시작되면 접어 둔다 (머리를 눌러 다시 편다).
+function packingCard(st) {
   const list = packing.items();
   const done = list.filter((it) => state.packed.has(it.id)).length;
+  const open = state.packingOpen ?? st.state === 'upcoming';
   return `
-    <section class="card">
-      <h2>준비물 ${list.length ? `<span class="count">${done}/${list.length}</span>` : ''}</h2>
+    <details class="card fold" id="packing-fold" ${open ? 'open' : ''}>
+      <summary>준비물 ${list.length ? `<span class="count">${done}/${list.length}</span>` : ''}</summary>
       ${list.length
         ? list
             .map(
@@ -343,7 +347,7 @@ function packingCard() {
             .join('')
         : `<p class="hint">체크리스트가 비어 있어요.<br>여행 칸의 <b>준비물</b> 에서 늘 챙기는 것을 적어 두면 여행마다 여기에 그대로 나와요.</p>
            <button type="button" class="btn small" style="margin-top:10px" data-act="packing">준비물 적으러 가기</button>`}
-    </section>`;
+    </details>`;
 }
 
 // 일정: 2박 3일이면 세 칸. 칸마다 어디를 갔고 얼마를 썼는지 줄을 더한다.
@@ -391,6 +395,12 @@ function planRow(p) {
 function onDetailClick(e) {
   const trip = current();
   if (!trip) return;
+
+  // 준비물 접기/펴기 — 다시 그려도 그대로 있게 기억해 둔다 (열림 상태는 이 클릭 뒤에 뒤집힌다)
+  if (e.target.closest('#packing-fold > summary')) {
+    state.packingOpen = !$('#packing-fold').open;
+    return;
+  }
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act === 'ledger') {
     closeDetail();

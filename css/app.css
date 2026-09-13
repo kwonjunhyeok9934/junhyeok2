@@ -591,3 +591,14 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 }
 .plan-add:active { transform: scale(.98); background: var(--accent-soft); }
 #plan-days .chip small { color: inherit; opacity: .65; }
+
+/* 접었다 펴는 카드 (여행 상세의 준비물) */
+.fold { padding: 14px 16px; }
+.fold > summary {
+  cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; font-weight: 600; color: var(--muted);
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
+.fold[open] > summary { margin-bottom: 12px; }
+.fold[open] > summary::after { transform: rotate(180deg); }

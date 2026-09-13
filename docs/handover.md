@@ -1,4 +1,4 @@
-# 우리집 — 인수인계 (2026-09-13 기준, v23)
+# 우리집 — 인수인계 (2026-09-13 기준, v24)
 
 두 사람(부부)이 쓰는 PWA. 배포: https://junhyeok2.vercel.app · 저장소: kwonjunhyeok9934/junhyeok2 (`main`에 바로 커밋)
 
@@ -65,6 +65,8 @@
 - **이름은 안 적어도 된다.** 비우면 `nextTripName(지역, 다녀온 횟수)` 로 "제주시 3" 처럼 짓는다. 시트 순서도 어디 → 언제 → 이름이다.
 - **준비물은 공용 한 벌**(`packing_items`, 여행 칸의 준비물 화면 = `js/packing.js`). 여행에서는 `trip_packed` 에
   줄이 있으면 체크된 것 — 여행마다 목록을 새로 적지 않는다.
+  상세에서는 `<details class="fold">` 로 접힌다. 기본값은 '여행 전이면 펼침'이고, 직접 접었다 펴면 `state.packingOpen` 에
+  기억해 둔다 — 체크할 때마다 상세를 통째로 다시 그리기 때문에 기억해 두지 않으면 접힘이 풀린다.
 - **일정은 `trip_plans`**. 하루에 여러 줄이고 "어디(place) + 얼마(amount)". 금액이 있으면 가계부 거래 하나와 1:1 로 붙는다
   (식비 `meal_buys` 와 같은 방식). 쓰기는 `save_trip_plan(p jsonb)` RPC 한 번, 줄을 지우면 AFTER DELETE 트리거가 거래까지 지운다.
   카테고리는 `expense/여행` (31번이 없으면 만든다).
