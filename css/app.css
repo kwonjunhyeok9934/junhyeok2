@@ -578,11 +578,6 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .trip-spend strong { font-size: 24px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .trip-spend span { color: var(--muted); font-size: 14px; }
 
-/* 여행 상세의 작은 지도 — 어디쯤인지만 보여 준다 */
-.mini-map { width: 100%; display: block; border-radius: 12px; background: var(--bg); margin-top: 12px; }
-.mini-map path { fill: var(--line); stroke: var(--card); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
-.mini-map path.on { fill: var(--accent); }
-.mini-map text { fill: var(--text); text-anchor: middle; dominant-baseline: central; font-weight: 700; stroke: var(--card); paint-order: stroke; stroke-linejoin: round; }
 
 /* 여행 상세의 일차별 일정 */
 .plans h2 .count { color: var(--accent); }
@@ -608,3 +603,10 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .fold > summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
 .fold[open] > summary { margin-bottom: 12px; }
 .fold[open] > summary::after { transform: rotate(180deg); }
+
+/* 준비물 대분류 머리 (여행 상세 안에서는 조금 작게) */
+.fold .group-head { margin: 14px 2px 6px; }
+.fold .group-head:first-of-type { margin-top: 2px; }
+#packing-list .group-head { margin: 18px 2px 8px; }
+#packing-list .item-row { padding: 9px 8px 9px 14px; margin-bottom: 6px; }
+#packing-list .item-row .icon-btn { font-size: 13px; padding: 6px 8px; color: var(--muted); }

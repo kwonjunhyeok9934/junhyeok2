@@ -1,4 +1,4 @@
-# 우리집 — 인수인계 (2026-09-13 기준, v25)
+# 우리집 — 인수인계 (2026-09-13 기준, v26)
 
 두 사람(부부)이 쓰는 PWA. 배포: https://junhyeok2.vercel.app · 저장소: kwonjunhyeok9934/junhyeok2 (`main`에 바로 커밋)
 
@@ -20,6 +20,12 @@
 - 여행 칸: 지도(시군구 색칠·지역 시트) · 내 여행(여행 목록·상세·일차별 일정) · 준비물(공용 체크리스트)
 
 설정: 내 이름 · 기념일 · 알림 · 화면(테마) · 카테고리(지출/수입/고정비/식비 어디서·어떻게) · 로그아웃
+
+## SQL 은 로컬 Postgres 로 검증한다
+`schema.sql` 은 Supabase 에서만 돌 것 같지만, `auth.users`·`auth.uid()`·`net.http_post`·`supabase_realtime` 만 흉내 내면
+로컬 PostgreSQL 에서 그대로 돌려 볼 수 있다. **고칠 때마다 두세 번 연속 실행해 본다** — "여러 번 실행해도 안전" 이 이 파일의 약속이라서.
+실제로 이렇게 해서 두 가지를 잡았다: `save_meal` 의 `end $$;` 한 줄이 머지 중에 사라져 그 뒤 섹션이 통째로 안 만들어지던 것,
+그리고 `categories_kind_check` 를 좁은 목록으로 다시 만들어서 두 번째 실행이 깨지던 것.
 
 ## 작업 방식
 - 새 표/열이 필요하면 `supabase/schema.sql`에 "여러 번 실행 안전" 형태로 추가하고, 사용자가 SQL Editor에서 실행 (Claude는 Supabase에 직접 접속 불가)
@@ -66,9 +72,11 @@
 - **이름은 안 적어도 된다.** 비우면 `nextTripName(지역, 다녀온 횟수)` 로 "제주시 3" 처럼 짓는다. 시트 순서도 어디 → 언제 → 이름이다.
 - **준비물은 공용 한 벌**(`packing_items`, 여행 칸의 준비물 화면 = `js/packing.js`). 여행에서는 `trip_packed` 에
   줄이 있으면 체크된 것 — 여행마다 목록을 새로 적지 않는다.
+  대분류는 `packing_items.group_name` (자유 문자열, 기본 분류는 `js/packing.js` 의 `BASE_GROUPS`).
   상세에서는 `<details class="fold">` 로 접힌다. 기본값은 '여행 전이면 펼침'이고, 직접 접었다 펴면 `state.packingOpen` 에
   기억해 둔다 — 체크할 때마다 상세를 통째로 다시 그리기 때문에 기억해 두지 않으면 접힘이 풀린다.
-- **일정은 `trip_plans`**. 하루에 여러 줄이고 "어디(place) + 얼마(amount)". 금액이 있으면 가계부 거래 하나와 1:1 로 붙는다
+- **일정은 `trip_plans`**. 하루에 여러 줄이고 "어디(place) + 분류(category_id, `kind='trip'`) + 얼마(amount)".
+  가계부 거래는 늘 `expense/여행` 카테고리이고 분류는 메모에 들어간다(`경주시 · 티켓 · 첨성대`) — 가계부에서 '여행' 한 덩어리로 보게. 금액이 있으면 가계부 거래 하나와 1:1 로 붙는다
   (식비 `meal_buys` 와 같은 방식). 쓰기는 `save_trip_plan(p jsonb)` RPC 한 번, 줄을 지우면 AFTER DELETE 트리거가 거래까지 지운다.
   카테고리는 `expense/여행` (31번이 없으면 만든다).
 - '가계부에서 이 기간 보기' 는 `ledger.showRange(start, end)` 로 조회 기간을 바꾼 뒤 탭을 옮긴다.

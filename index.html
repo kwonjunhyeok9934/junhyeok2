@@ -187,11 +187,12 @@
     </section>
 
     <section id="tab-packing" class="tab" hidden>
+      <div id="packing-groups" class="chips" style="margin-bottom:10px"></div>
       <form id="packing-quick" class="row quick">
         <input id="packing-title" type="text" placeholder="챙길 것을 적고 Enter" maxlength="60" autocomplete="off">
         <button type="submit" class="btn primary small">추가</button>
       </form>
-      <p class="hint" style="margin:-6px 0 12px">여행마다 이 목록이 그대로 나와요. 여행에서는 챙긴 것만 체크하면 돼요.</p>
+      <p class="hint" style="margin:-6px 0 12px">위에서 대분류를 고르고 적으면 그 분류로 들어가요. 항목을 누르면 이름·분류를 고칩니다.</p>
       <div id="packing-list"><div class="skel"></div><div class="skel"></div></div>
     </section>
   </main>
@@ -441,6 +442,25 @@
   </div>
 </div>
 
+<!-- 준비물 항목 시트 -->
+<div id="sheet-packing" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <form id="packing-form">
+      <input type="hidden" id="packing-id">
+      <input id="packing-name" type="text" placeholder="준비물 이름" maxlength="60" required>
+      <div>
+        <div class="field-label">대분류</div>
+        <div id="packing-item-groups" class="chips"></div>
+      </div>
+      <div class="row actions">
+        <button type="button" id="packing-delete" class="btn danger">삭제</button>
+        <button type="submit" id="packing-save" class="btn primary grow">저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- 일정 한 줄 시트 -->
 <div id="sheet-plan" class="sheet" aria-hidden="true">
   <div class="sheet-backdrop"></div>
@@ -452,6 +472,14 @@
         <div id="plan-days" class="chips"></div>
       </div>
       <input id="plan-place" type="text" placeholder="어디를 갔나요? (예: 성산일출봉)" maxlength="60" autocomplete="off" required>
+      <div>
+        <div class="field-label">분류</div>
+        <div id="plan-cats" class="chips"></div>
+        <div id="plan-new-cat-row" class="row" hidden style="margin-top:8px">
+          <input id="plan-new-cat" type="text" placeholder="새 분류 이름" maxlength="12">
+          <button type="button" id="plan-new-cat-ok" class="btn small">추가</button>
+        </div>
+      </div>
       <label class="amount-field">
         <span class="won">₩</span>
         <input id="plan-amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off">

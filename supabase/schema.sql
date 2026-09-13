@@ -177,7 +177,9 @@ end $$;
 -- 13. 카테고리에 고정비 종류 허용 + 기본 고정비 카테고리 -----------------------
 
 alter table categories drop constraint if exists categories_kind_check;
-alter table categories add constraint categories_kind_check check (kind in ('expense', 'income', 'fixed'));
+-- 종류는 뒤 섹션들에서 늘어난다. 여러 번 실행해도 되도록 어디서나 같은(가장 넓은) 목록을 쓴다.
+alter table categories add constraint categories_kind_check
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip'));
 
 insert into categories (name, kind, sort_order)
 select * from (values
@@ -287,7 +289,14 @@ create table if not exists meals (
 
 create index if not exists meals_date_idx on meals (date);
 -- 한 거래를 두 끼니가 가리키면 합계가 두 번 잡힌다. null 은 여러 개 허용된다.
-create unique index if not exists meals_transaction_id_key on meals (transaction_id);
+-- (23번이 이 열을 떼어 낸다. 이미 떼어 낸 뒤 다시 실행해도 되도록 열이 있을 때만 만든다.)
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_name = 'meals' and column_name = 'transaction_id') then
+    create unique index if not exists meals_transaction_id_key on meals (transaction_id);
+  end if;
+end $$;
 
 alter table meals enable row level security;
 drop policy if exists "auth all" on meals;
@@ -302,7 +311,8 @@ end $$;
 
 -- 식비 카테고리 (설정 → 카테고리에서 이름·순서·추가·삭제 가능)
 alter table categories drop constraint if exists categories_kind_check;
-alter table categories add constraint categories_kind_check check (kind in ('expense', 'income', 'fixed', 'meal'));
+alter table categories add constraint categories_kind_check
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip'));
 
 insert into categories (name, kind, sort_order)
 select * from (values
@@ -378,7 +388,7 @@ create trigger meal_buys_after_delete after delete on meal_buys
 -- 카테고리 종류를 '어디서'와 '어떻게' 로 나눈다.
 alter table categories drop constraint if exists categories_kind_check;
 alter table categories add constraint categories_kind_check
-  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how'));
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip'));
 
 -- 21번이 넣은 kind='meal' 은 '어떻게' 였다. '집밥' 은 '어디서=집' 이 대신하므로 뺀다.
 delete from categories c
@@ -582,6 +592,7 @@ begin
   end loop;
 
   return v_meal;
+end $$;
 
 -- 27. 여행 (다녀온 곳) ---------------------------------------------------------
 -- 지도에서 색칠한 시·군·구를 한 줄씩 남긴다. 코드는 js/koreamap.js 의 c 값.
@@ -775,6 +786,84 @@ end $$;
 insert into categories (name, kind, sort_order)
 select '여행', 'expense', 95
 where not exists (select 1 from categories where kind = 'expense' and name = '여행');
+
+-- 33. 준비물 대분류 + 일정 카테고리 ------------------------------------------------
+-- 준비물은 '의류 / 세면도구 / 전자기기 …' 처럼 대분류로 묶어 본다.
+-- 일정 줄에는 '식비 · 숙소비 · 티켓 …' 분류를 붙인다 (categories 의 kind='trip').
+-- 가계부에 들어가는 거래는 그대로 '여행' 카테고리이고, 분류는 메모에 함께 적힌다.
+
+alter table packing_items add column if not exists group_name text not null default '기타';
+alter table trip_plans    add column if not exists category_id bigint references categories(id) on delete set null;
+
+alter table categories drop constraint if exists categories_kind_check;
+alter table categories add constraint categories_kind_check
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip'));
+
+insert into categories (name, kind, sort_order)
+select * from (values
+  ('식비',     'trip', 10),
+  ('숙소비',   'trip', 20),
+  ('티켓',     'trip', 30),
+  ('교통',     'trip', 40),
+  ('주유비',   'trip', 50),
+  ('비행기',   'trip', 60),
+  ('쇼핑',     'trip', 70),
+  ('기타',     'trip', 80)
+) as v(name, kind, sort_order)
+where not exists (select 1 from categories where kind = 'trip');
+
+-- 분류까지 함께 저장하도록 31번의 함수를 갱신한다.
+--   category_id    = 일정 줄의 분류 (kind='trip')
+--   tx_category_id = 가계부 거래의 카테고리 ('여행')
+create or replace function save_trip_plan(p jsonb) returns bigint
+language plpgsql as $$
+declare
+  v_id     bigint := nullif(p ->> 'id', '')::bigint;
+  v_tx     bigint := nullif(p ->> 'transaction_id', '')::bigint;
+  v_user   uuid   := auth.uid();
+  v_amount int    := coalesce((p ->> 'amount')::int, 0);
+  v_date   date   := (p ->> 'date')::date;
+  v_cat    bigint := nullif(p ->> 'category_id', '')::bigint;
+  v_txcat  bigint := nullif(p ->> 'tx_category_id', '')::bigint;
+  v_memo   text   := coalesce(p ->> 'tx_memo', '');
+begin
+  -- 1) 가계부
+  if v_amount > 0 then
+    if v_tx is null then
+      insert into transactions (kind, amount, category_id, date, memo, created_by)
+      values ('expense', v_amount, v_txcat, v_date, v_memo, v_user) returning id into v_tx;
+    else
+      update transactions set amount = v_amount, category_id = v_txcat, date = v_date, memo = v_memo
+      where id = v_tx;
+      if not found then   -- 가계부에서 지워진 거래 → 새로 만들어 다시 연결한다
+        insert into transactions (kind, amount, category_id, date, memo, created_by)
+        values ('expense', v_amount, v_txcat, v_date, v_memo, v_user) returning id into v_tx;
+      end if;
+    end if;
+  elsif v_tx is not null then
+    delete from transactions where id = v_tx;   -- 금액을 지웠다
+    v_tx := null;
+  end if;
+
+  -- 2) 일정
+  if v_id is null then
+    insert into trip_plans (trip_id, date, place, memo, amount, category_id, transaction_id, created_by)
+    values ((p ->> 'trip_id')::bigint, v_date, coalesce(p ->> 'place', ''), coalesce(p ->> 'memo', ''),
+            v_amount, v_cat, v_tx, v_user)
+    returning id into v_id;
+  else
+    update trip_plans set date = v_date, place = coalesce(p ->> 'place', ''), memo = coalesce(p ->> 'memo', ''),
+           amount = v_amount, category_id = v_cat, transaction_id = v_tx
+    where id = v_id;
+    if not found then   -- 상대가 지운 줄 → 새로 만든다
+      insert into trip_plans (trip_id, date, place, memo, amount, category_id, transaction_id, created_by)
+      values ((p ->> 'trip_id')::bigint, v_date, coalesce(p ->> 'place', ''), coalesce(p ->> 'memo', ''),
+              v_amount, v_cat, v_tx, v_user)
+      returning id into v_id;
+    end if;
+  end if;
+  return v_id;
+end $$;
 
 -- 20. 확인용 ---------------------------------------------------------------------
 

@@ -4,16 +4,13 @@
 // 일정 줄에 적은 금액은 가계부 거래로 따라 들어간다 (save_trip_plan RPC 가 한 번에 쓴다).
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic } from './ui.js';
-import { VIEWBOX, REGIONS } from './koreamap.js';
-import { fetchCategories } from './categories.js';
+import { REGIONS } from './koreamap.js';
+import { fetchCategories, addCategory } from './categories.js';
 import {
   todayLocal, formatWon, parseWon, dayName, tripLabel, tripNights, tripStatus, sortTrips, tripsByRegion,
-  nextTripName, tripDates, groupPlansByDate, sumPlans,
+  nextTripName, tripDates, groupPlansByDate, sumPlans, groupPacking,
 } from './calc.js';
 import * as packing from './packing.js';
-
-const [, , MAPW, MAPH] = VIEWBOX.split(' ').map(Number);
-const BY_CODE = new Map(REGIONS.map((r) => [r.c, r]));
 
 const state = {
   trips: [],
@@ -26,6 +23,8 @@ const state = {
   plans: [],          // 그 여행의 일정 줄
   plan: null,         // 시트에서 고치는 중인 일정 줄
   planDate: '',       // 시트에서 고른 날
+  planCat: null,      // 시트에서 고른 분류 (categories 의 kind='trip')
+  cats: [],           // 카테고리 전체 (일정 분류 + 가계부 '여행')
   packingOpen: null,  // 준비물 접기: null 이면 '여행 전에만 펼침', true/false 면 직접 접었다 편 것
 };
 
@@ -73,6 +72,10 @@ export function init({ userId, onChange: changed, onTxChange: txChanged, onShowR
     planPlace: $('#plan-place'),
     planAmount: $('#plan-amount'),
     planMemo: $('#plan-memo'),
+    planCats: $('#plan-cats'),
+    planNewCatRow: $('#plan-new-cat-row'),
+    planNewCat: $('#plan-new-cat'),
+    planNewCatOk: $('#plan-new-cat-ok'),
     planSave: $('#plan-save'),
     planDel: $('#plan-delete'),
   };
@@ -117,6 +120,25 @@ export function init({ userId, onChange: changed, onTxChange: txChanged, onShowR
     state.planDate = chip.dataset.date;
     renderPlanDays();
   });
+  el.planCats.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    if (chip.dataset.add !== undefined) {
+      el.planNewCatRow.hidden = false;
+      el.planNewCat.focus();
+      return;
+    }
+    const id = Number(chip.dataset.id);
+    state.planCat = state.planCat === id ? null : id;
+    renderPlanCats();
+  });
+  el.planNewCatOk.addEventListener('click', addPlanCat);
+  el.planNewCat.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addPlanCat();
+    }
+  });
   el.planPlace.addEventListener('input', validatePlan);
   el.planAmount.addEventListener('input', () => {
     const n = parseWon(el.planAmount.value);
@@ -146,7 +168,7 @@ function unwrap({ data, error }) {
 // 아직 SQL 을 실행하지 않아 표가 없는 상태인지.
 function missingTable(err) {
   const m = `${err?.message ?? ''} ${err?.code ?? ''}`;
-  return /does not exist|could not find the table|42P01|PGRST205|function .* does not exist/i.test(m);
+  return /does not exist|could not find the (table|function)|42P01|PGRST20[25]/i.test(m);
 }
 
 function current() {
@@ -252,55 +274,20 @@ async function showDetail() {
   const trip = current();
   if (!trip) return;
   try {
-    const [packed, plans] = await Promise.all([
+    const [packed, plans, cats] = await Promise.all([
       sb.from('trip_packed').select('item_id').eq('trip_id', trip.id).then(unwrap),
       sb.from('trip_plans').select('*').eq('trip_id', trip.id).order('created_at', { ascending: true }).then(unwrap),
+      fetchCategories(),
     ]);
     state.packed = new Set(packed.map((r) => r.item_id));
     state.plans = plans;
+    state.cats = cats;
   } catch (err) {
     console.error(err);
-    if (missingTable(err)) toast('준비물·일정 표가 아직 없어요. schema.sql 31번을 실행해 주세요');
+    toast(missingTable(err) ? '준비물·일정 표가 아직 없어요. schema.sql 31·33번을 실행해 주세요' : `불러오지 못했어요: ${err.message ?? ''}`);
   }
   el.viewTitle.textContent = trip.title;
   renderDetail();
-}
-
-// 여행 지역 언저리만 잘라 보여 주는 작은 지도. "여기가 어디쯤" 만 알면 된다.
-function miniMap(trip) {
-  const mine = (trip.regions ?? []).map((r) => BY_CODE.get(r.code)).filter(Boolean);
-  if (!mine.length) return '';
-  const x0 = Math.min(...mine.map((r) => r.b[0]));
-  const y0 = Math.min(...mine.map((r) => r.b[1]));
-  const x1 = Math.max(...mine.map((r) => r.b[0] + r.b[2]));
-  const y1 = Math.max(...mine.map((r) => r.b[1] + r.b[3]));
-  const ratio = 16 / 10;
-
-  // 지역만 딱 맞추면 어디인지 알 수 없다. 둘레를 넉넉히 두고, 너무 멀지도 가깝지도 않게 자른다.
-  let w = Math.min(Math.max(Math.max(x1 - x0, (y1 - y0) * ratio) * 2.6, 560), MAPW);
-  let h = w / ratio;
-  if (h > MAPH) {
-    h = MAPH;
-    w = h * ratio;
-  }
-  // 지도 밖으로 나가도 그냥 둔다 — 여백은 바다처럼 보이고, 여행지가 늘 한가운데 온다.
-  const vx = (x0 + x1) / 2 - w / 2;
-  const vy = (y0 + y1) / 2 - h / 2;
-
-  const near = REGIONS.filter(
-    (r) => r.b[0] < vx + w && r.b[0] + r.b[2] > vx && r.b[1] < vy + h && r.b[1] + r.b[3] > vy,
-  );
-  const codes = new Set(mine.map((r) => r.c));
-  return `
-    <svg class="mini-map" viewBox="${vx} ${vy} ${w} ${h}" role="img" aria-label="여행 지역 지도">
-      ${near.map((r) => `<path class="${codes.has(r.c) ? 'on' : ''}" d="${r.d}"/>`).join('')}
-      ${mine
-        .map(
-          (r) =>
-            `<text x="${r.p[0]}" y="${r.p[1]}" font-size="${Math.round(w / 24)}" stroke-width="${Math.round(w / 150)}">${escapeHtml(r.n)}</text>`,
-        )
-        .join('')}
-    </svg>`;
 }
 
 function renderDetail() {
@@ -315,7 +302,6 @@ function renderDetail() {
       <div class="chips read">${(trip.regions ?? [])
         .map((r) => `<span class="chip">${escapeHtml(r.name || r.code)}</span>`)
         .join('') || '<span class="hint">지역을 안 골랐어요</span>'}</div>
-      ${miniMap(trip)}
       ${trip.memo ? `<p class="trip-memo">${escapeHtml(trip.memo)}</p>` : ''}
     </section>
 
@@ -336,13 +322,19 @@ function packingCard(st) {
     <details class="card fold" id="packing-fold" ${open ? 'open' : ''}>
       <summary>준비물 ${list.length ? `<span class="count">${done}/${list.length}</span>` : ''}</summary>
       ${list.length
-        ? list
+        ? groupPacking(list)
             .map(
-              (it) => `
-        <div class="todo-row item-row ${state.packed.has(it.id) ? 'done' : ''}" data-item="${it.id}">
-          <button type="button" class="todo-check" aria-label="${state.packed.has(it.id) ? '안 챙김' : '챙김'}">${state.packed.has(it.id) ? '✓' : ''}</button>
-          <div class="todo-main"><div class="todo-title">${escapeHtml(it.title)}</div></div>
-        </div>`,
+              (g) => `
+        <div class="group-head"><span>${escapeHtml(g.name)}</span><span class="sub">${g.items.filter((it) => state.packed.has(it.id)).length}/${g.items.length}</span></div>
+        ${g.items
+          .map(
+            (it) => `
+          <div class="todo-row item-row ${state.packed.has(it.id) ? 'done' : ''}" data-item="${it.id}">
+            <button type="button" class="todo-check" aria-label="${state.packed.has(it.id) ? '안 챙김' : '챙김'}">${state.packed.has(it.id) ? '✓' : ''}</button>
+            <div class="todo-main"><div class="todo-title">${escapeHtml(it.title)}</div></div>
+          </div>`,
+          )
+          .join('')}`,
             )
             .join('')
         : `<p class="hint">체크리스트가 비어 있어요.<br>여행 칸의 <b>준비물</b> 에서 늘 챙기는 것을 적어 두면 여행마다 여기에 그대로 나와요.</p>
@@ -382,10 +374,11 @@ function planCard(trip) {
 }
 
 function planRow(p) {
+  const cat = state.cats.find((c) => c.id === p.category_id)?.name ?? '';
   return `
     <div class="tx-row plan-row" data-plan="${p.id}">
       <div class="tx-main">
-        <div class="tx-cat">${escapeHtml(p.place || '메모')}</div>
+        <div class="tx-cat">${escapeHtml(p.place || cat || '메모')}${cat && p.place ? `<span class="tag">${escapeHtml(cat)}</span>` : ''}</div>
         ${p.memo ? `<div class="tx-memo">${escapeHtml(p.memo)}</div>` : ''}
       </div>
       <div class="tx-amount">${p.amount ? formatWon(p.amount) : ''}</div>
@@ -459,7 +452,11 @@ function openPlan(plan, date) {
   el.planAmount.value = plan?.amount ? formatWon(plan.amount) : '';
   el.planMemo.value = plan?.memo ?? '';
   el.planDel.hidden = !plan;
+  state.planCat = plan?.category_id ?? null;
+  el.planNewCatRow.hidden = true;
+  el.planNewCat.value = '';
   renderPlanDays();
+  renderPlanCats();
   validatePlan();
   openSheet(el.planSheet);
   if (!plan) setTimeout(() => el.planPlace.focus(), 250);
@@ -477,19 +474,39 @@ function renderPlanDays() {
     .join('');
 }
 
+function renderPlanCats() {
+  el.planCats.innerHTML =
+    state.cats
+      .filter((c) => c.kind === 'trip')
+      .map(
+        (c) => `<button type="button" class="chip ${c.id === state.planCat ? 'selected' : ''}" data-id="${c.id}">${escapeHtml(c.name)}</button>`,
+      )
+      .join('') + '<button type="button" class="chip add" data-add>＋ 새 분류</button>';
+}
+
+async function addPlanCat() {
+  const name = el.planNewCat.value;
+  if (!name.trim()) return;
+  try {
+    const created = await addCategory(name, 'trip', state.cats);
+    state.cats = await fetchCategories();
+    state.planCat = created.id;
+    el.planNewCat.value = '';
+    el.planNewCatRow.hidden = true;
+    renderPlanCats();
+  } catch (err) {
+    console.error(err);
+    toast(`분류를 추가하지 못했어요: ${err.message ?? ''}`);
+  }
+}
+
 function validatePlan() {
   el.planSave.disabled = !el.planPlace.value.trim() && parseWon(el.planAmount.value) <= 0;
 }
 
 // 가계부에서 이 지출이 들어갈 카테고리 ('여행' 이 없으면 미분류)
-async function travelCategoryId() {
-  try {
-    const cats = await fetchCategories();
-    return cats.find((c) => c.kind === 'expense' && c.name === '여행')?.id ?? null;
-  } catch (err) {
-    console.warn(err);
-    return null;
-  }
+function travelCategoryId() {
+  return state.cats.find((c) => c.kind === 'expense' && c.name === '여행')?.id ?? null;
 }
 
 async function savePlan() {
@@ -501,6 +518,7 @@ async function savePlan() {
 
   el.planSave.disabled = true;
   try {
+    const catName = state.cats.find((c) => c.id === state.planCat)?.name ?? '';
     unwrap(
       await sb.rpc('save_trip_plan', {
         p: {
@@ -511,8 +529,9 @@ async function savePlan() {
           place,
           memo: el.planMemo.value.trim(),
           amount,
-          category_id: amount > 0 ? await travelCategoryId() : null,
-          tx_memo: `${trip.title}${place ? ` · ${place}` : ''}`,
+          category_id: state.planCat,                                   // 일정 줄의 분류
+          tx_category_id: amount > 0 ? travelCategoryId() : null,       // 가계부는 '여행'
+          tx_memo: [trip.title, catName, place].filter(Boolean).join(' · '),
         },
       }),
     );
@@ -522,7 +541,11 @@ async function savePlan() {
     if (amount > 0 || state.plan?.amount) onTxChange(); // 가계부도 바뀌었다
   } catch (err) {
     console.error(err);
-    toast(missingTable(err) ? '일정 표가 아직 없어요. schema.sql 31번을 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
+    toast(
+      missingTable(err)
+        ? '일정 표가 아직 없어요. schema.sql 31·33번을 실행해 주세요'
+        : `저장에 실패했어요: ${err.message ?? ''}`,
+    );
   } finally {
     el.planSave.disabled = false;
   }
@@ -660,7 +683,11 @@ async function save() {
     openTrip(id);
   } catch (err) {
     console.error(err);
-    toast(missingTable(err) ? '여행 표가 아직 없어요. schema.sql 29번을 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
+    toast(
+      missingTable(err)
+        ? '여행 표가 아직 없어요. schema.sql 29번을 실행해 주세요'
+        : `저장에 실패했어요: ${err.message ?? ''}`,
+    );
   } finally {
     el.save.disabled = false;
   }

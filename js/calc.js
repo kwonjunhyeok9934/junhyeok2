@@ -567,6 +567,22 @@ export function sumPlans(plans) {
   return plans.reduce((a, p) => a + (p.amount || 0), 0);
 }
 
+// 준비물을 대분류로 묶는다. 기본 분류를 앞에 두고, 새로 만든 분류는 그 뒤에 이름 순.
+// [{ name: '의류', items: [...] }, …]
+export function groupPacking(items, baseOrder = []) {
+  const map = new Map();
+  for (const it of items) {
+    const key = it.group_name || '기타';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(it);
+  }
+  const rank = new Map(baseOrder.map((n, i) => [n, i]));
+  const big = baseOrder.length + 100;
+  return [...map.entries()]
+    .map(([name, list]) => ({ name, items: list.slice().sort((a, b) => a.sort_order - b.sort_order || a.id - b.id) }))
+    .sort((a, b) => (rank.get(a.name) ?? big) - (rank.get(b.name) ?? big) || a.name.localeCompare(b.name));
+}
+
 // Map<지역코드, [여행…]>. 여행은 최근 순.
 export function tripsByRegion(trips) {
   const map = new Map();

@@ -10,7 +10,7 @@ import {
   buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
-  nextTripName, tripDates, groupPlansByDate, sumPlans,
+  nextTripName, tripDates, groupPlansByDate, sumPlans, groupPacking,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -678,4 +678,23 @@ test('groupPlansByDate: 일차별로 묶고 적은 순서대로', () => {
 test('sumPlans: 쓴 돈 합계', () => {
   assert.equal(sumPlans(plans), 30000);
   assert.equal(sumPlans([]), 0);
+});
+
+test('groupPacking: 기본 분류 순서 → 새 분류는 이름 순', () => {
+  const items = [
+    { id: 1, title: '충전기', group_name: '전자기기', sort_order: 30 },
+    { id: 2, title: '속옷', group_name: '의류', sort_order: 20 },
+    { id: 3, title: '상의', group_name: '의류', sort_order: 10 },
+    { id: 4, title: '여권', group_name: '서류', sort_order: 40 },
+    { id: 5, title: '수영복', group_name: '해변', sort_order: 50 },
+    { id: 6, title: '무엇', sort_order: 60 },
+  ];
+  const groups = groupPacking(items, ['의류', '세면도구', '전자기기', '서류', '기타']);
+  assert.deepEqual(groups.map((g) => g.name), ['의류', '전자기기', '서류', '기타', '해변']);
+  assert.deepEqual(groups[0].items.map((i) => i.title), ['상의', '속옷']); // sort_order 순
+  assert.deepEqual(groups[3].items.map((i) => i.title), ['무엇']);        // 분류 없으면 기타
+});
+
+test('groupPacking: 비어 있으면 빈 목록', () => {
+  assert.deepEqual(groupPacking([], ['의류']), []);
 });
