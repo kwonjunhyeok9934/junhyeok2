@@ -677,4 +677,5 @@ union all select 'meals', count(*) from meals
 union all select 'meal_buys', count(*) from meal_buys
 union all select 'visited_regions', count(*) from visited_regions
 union all select 'trips', count(*) from trips
+union all select 'trip_regions', count(*) from trip_regions
 union all select 'trip_items', count(*) from trip_items;
