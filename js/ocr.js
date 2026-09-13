@@ -7,13 +7,18 @@
 // 처음 한 번은 라이브러리·wasm·한글 학습 데이터(합쳐 5MB 남짓)를 받는다. 그 뒤로는 브라우저가 캐시한다.
 const V = '7.0.0';
 
+// 한글 학습 데이터는 **best_int** 를 쓴다. 기본값인 tessdata.projectnaptha.com/4.0.0 은
+// 한글 글자 사이에 공백을 넣어 버려서(`[ 사 조 대 림 ]`) 품목 이름을 못 쓴다 — 실제 컬리 주문
+// 화면으로 재 보면 글자 정확도가 40% 대 84% 로 갈렸다. 게다가 이쪽이 2.2MB 로 15.3MB 보다 작다.
+const LANG_V = '1.0.0';
+
 // 주소를 전부 못 박아 둔다. 안 그러면 라이브러리가 제 버전에 맞는 파일을 스스로 찾아가느라
 // 버전이 어긋날 수 있다. 시험할 때 같은 출처 사본으로 바꿔 끼우려고 밖으로 열어 뒀다.
 export const paths = {
   lib: `https://cdn.jsdelivr.net/npm/tesseract.js@${V}/dist/tesseract.min.js`,
   worker: `https://cdn.jsdelivr.net/npm/tesseract.js@${V}/dist/worker.min.js`,
   core: `https://cdn.jsdelivr.net/npm/tesseract.js-core@${V}`,
-  lang: 'https://tessdata.projectnaptha.com/4.0.0',
+  lang: `https://cdn.jsdelivr.net/npm/@tesseract.js-data/kor@${LANG_V}/4.0.0_best_int`,
 };
 
 let loading = null;
@@ -41,6 +46,10 @@ async function tesseract() {
 export const supported = () => typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
 
 // file(사진) → 읽은 글. onProgress(0~1) 로 진행률을 알려 준다.
+// 주문 내역은 '한 칸에 위에서 아래로 쌓인 글' 이다. 기본값(3 = 알아서 판단)보다
+// 4(한 칸짜리 글) 가 이 화면에서 확실히 낫다 (글자 정확도 78% → 84%).
+const PAGESEG_SINGLE_COLUMN = '4';
+
 export async function readText(file, onProgress = () => {}) {
   const T = await tesseract();
   const worker = await T.createWorker('kor', 1, {
@@ -52,6 +61,7 @@ export async function readText(file, onProgress = () => {}) {
     },
   });
   try {
+    await worker.setParameters({ tessedit_pageseg_mode: PAGESEG_SINGLE_COLUMN });
     const { data } = await worker.recognize(file);
     return data.text ?? '';
   } finally {

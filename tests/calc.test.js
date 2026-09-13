@@ -712,6 +712,26 @@ test('parseOrderText: 여러 개 산 것은 이름에 수량을 남긴다 (값�
     [{ name: '유기농 콩나물 300g x2', amount: 4400 }]);
 });
 
+test('parseOrderText: 수량이 틀리게 읽혀도 그 품목을 안 놓친다', () => {
+  // 실제로 '1개' 가 '17!' · '기' · '1 개' 로 읽힌 적이 있다. 그 줄을 가격 줄로 못 알아보면
+  // 바로 위 품목이 통째로 빠진다 (컬리 화면에서 마지막 두 줄이 그렇게 사라졌다).
+  assert.deepEqual(parseOrderText('[농심] 신라면 골드 4입\n5,980원 17!'),
+    [{ name: '[농심] 신라면 골드 4입', amount: 5980 }]);
+  assert.deepEqual(parseOrderText('[크라운] 산도 살구팝\n5,380원 기'),
+    [{ name: '[크라운] 산도 살구팝', amount: 5380 }]);
+  assert.deepEqual(parseOrderText('두부 한 모\n3,000원'),
+    [{ name: '두부 한 모', amount: 3000 }]);
+});
+
+test('parseOrderText: 한글이 여럿 남는 줄은 가격 줄이 아니다', () => {
+  // '상품금액 39,650원' 을 가격 줄로 보면 바로 위 줄이 품목으로 딸려 들어간다.
+  assert.deepEqual(parseOrderText('[농심] 신라면\n5,980원 1개\n상품금액 39,650원\n결제금액 36,650원'),
+    [{ name: '[농심] 신라면', amount: 5980 }]);
+  // 값이 섞인 줄은 이름으로 안 쓴다 — 안 그러면 못 걸러 낸 요약 줄이 품목으로 들어온다.
+  // 그래서 '5,000원권 상품권' 같은 이름은 못 잡는다(드물고, 시트에서 적으면 된다).
+  assert.deepEqual(parseOrderText('5,000원권 상품권 세트\n4,500원 1개'), []);
+});
+
 test('parseOrderText: 가격 줄이 없으면 아무것도 안 담는다', () => {
   assert.deepEqual(parseOrderText('그냥 메모\n아무것도 아님'), []);
   assert.deepEqual(parseOrderText(''), []);

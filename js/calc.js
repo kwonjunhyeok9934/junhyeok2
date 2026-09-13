@@ -592,11 +592,15 @@ function pricesIn(line) {
   return [...String(line).matchAll(PRICE_RE)].map((m) => parseWon(m[1])).filter((n) => n > 0);
 }
 
-// 가격·수량 말고는 남는 게 거의 없는 줄 = 가격 줄.
+// 가격 말고는 수량 부스러기만 남는 줄 = 가격 줄.
+// 수량은 자주 틀리게 읽힌다 ('1개' → '17!', '기', '개'). 글자 수만 보면 그런 줄을 놓치고
+// 그 품목이 통째로 빠지므로, **한글이 거의 없다**는 것으로 가른다 —
+// 품목 이름이나 '상품금액' 같은 줄에는 한글이 여럿 남는다.
 function isPriceLine(line, prices) {
   if (!prices.length) return false;
-  const rest = String(line).replace(PRICE_RE, '').replace(QTY_RE, '').replace(/[\s|,.·\-/]/g, '');
-  return rest.length <= 2;
+  const rest = String(line).replace(PRICE_RE, '').replace(/[\s|,.·\-/]/g, '');
+  const hangul = (rest.match(/[가-힣]/g) ?? []).length;
+  return rest.length <= 4 && hangul <= 1;
 }
 
 // OCR 글 → [{ name, amount }]. 이름이 없거나 가격이 0인 것은 버린다.
