@@ -7,7 +7,7 @@ import {
   calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
   dayName, dayLabel, weekStart, weekDays, weekLabel, slotOfHour, resolveMealCategoryId,
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee,
-  buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, mealSubline,
+  buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyLineText,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
 } from '../js/calc.js';
@@ -297,13 +297,14 @@ test('mealBuyMemo: 가게 이름이 있으면 품목 대신 그걸 쓴다', () =
   );
 });
 
-test('mealSubline: 어디서와 같은 어떻게는 빼고, 3개 이상은 줄인다', () => {
-  assert.equal(mealSubline('집', []), '집');
-  assert.equal(mealSubline('집', ['마트']), '집 · 마트');
-  assert.equal(mealSubline('집', ['마트', '컬리']), '집 · 마트, 컬리');
-  assert.equal(mealSubline('집', ['마트', '컬리', '배달']), '집 · 마트 외 2');
-  assert.equal(mealSubline('외식', ['외식']), '외식'); // 양쪽에 있는 '외식' 중복 제거
-  assert.equal(mealSubline('', []), '');
+test('buyLineText: 품목과 가격을 이어 붙인다', () => {
+  assert.equal(
+    buyLineText([{ name: '고추', amount: 1500 }, { name: '양파', amount: 1000 }]),
+    '고추 1,500원, 양파 1,000원',
+  );
+  assert.equal(buyLineText([{ name: '얻어온 파', amount: 0 }]), '얻어온 파'); // 가격이 없으면 이름만
+  assert.equal(buyLineText([{ name: '', amount: 5000 }]), '5,000원');        // 이름이 없으면 가격만
+  assert.equal(buyLineText([]), '');
 });
 
 const meals = [

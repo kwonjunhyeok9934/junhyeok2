@@ -462,8 +462,21 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .meal-row { margin-bottom: 6px; padding: 10px 12px; box-shadow: none; background: var(--bg); }
 .meal-row:last-child { margin-bottom: 0; }
 .meal-row.empty-slot { background: transparent; border: 1.5px dashed var(--line); }
-.meal-slot { width: 38px; flex: none; font-weight: 700; font-size: 13px; color: var(--text-2); }
-.meal-row.empty-slot .meal-slot { color: var(--muted); font-weight: 600; }
+.meal-slot { width: 50px; flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.slot-name { font-weight: 700; font-size: 13px; color: var(--text-2); }
+.meal-row.empty-slot .slot-name { color: var(--muted); font-weight: 600; }
+.meal-row { align-items: flex-start; }
+.meal-row.empty-slot { align-items: center; }
+.meal-head { display: flex; align-items: baseline; gap: 6px; }
+/* 메뉴는 가장 잘 보여야 하지만 두 줄까지만. 뱃지는 밀리지 않게 고정. */
+.meal-head .tx-cat { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.meal-head .tag { flex: none; }
+/* keep-all 이 없으면 한글이 '양 파' 처럼 단어 중간에서 잘린다. */
+.meal-buy { color: var(--text-2); font-size: 13px; line-height: 1.5; margin-top: 4px; word-break: keep-all; }
+.meal-buy .tag { margin-left: 0; margin-right: 2px; }
+.tag.who { margin-left: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag.soft { background: var(--bg); color: var(--text-2); }
+.meal-row > .tx-amount { padding-top: 1px; }
 .tag { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
 .slot-add { flex: none; width: 24px; text-align: center; font-size: 15px; color: var(--muted); padding: 0; }
 
