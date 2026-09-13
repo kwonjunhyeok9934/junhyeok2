@@ -335,12 +335,11 @@ export function mealBuyMemo({ slot, menu, how, shop, lines }) {
     .slice(0, 60);
 }
 
-// 주간 목록의 보조 줄. '외식' 은 어디서·어떻게 양쪽에 있어서 그냥 이으면 '외식 · 외식' 이 된다.
-export function mealSubline(placeName, howNames) {
-  const place = String(placeName ?? '').trim();
-  const hows = (howNames ?? []).map((n) => String(n ?? '').trim()).filter((n) => n && n !== place);
-  const tail = hows.length > 2 ? `${hows[0]} 외 ${hows.length - 1}` : hows.join(', ');
-  return [place, tail].filter(Boolean).join(' · ');
+// 세트 한 줄의 품목 문구. '고추 1,500원, 양파 1,000원'
+export function buyLineText(lines) {
+  return cleanLines(lines)
+    .map((l) => [l.name, l.amount ? `${formatWon(l.amount)}원` : ''].filter(Boolean).join(' '))
+    .join(', ');
 }
 
 // { total, count(끼니 수), paid(돈 쓴 끼니), free(돈 안 쓴 끼니), buys(세트 수) }

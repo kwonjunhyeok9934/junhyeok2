@@ -8,7 +8,7 @@ import {
   todayLocal, shiftDay, formatWon, parseWon, dayName,
   MEAL_SLOTS, SLOT_LABEL, weekStart, weekDays, weekLabel, slotOfHour,
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL,
-  buyTotal, buyAmount, mealAmount, sortMealBuys, mealSubline,
+  buyTotal, buyAmount, mealAmount, sortMealBuys, buyLineText,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
 } from './calc.js';
 import { fetchCategories, addCategory } from './categories.js';
@@ -154,7 +154,7 @@ function render() {
 
   const byDate = sumMealsByDate(week);
   const grouped = groupMealsBySlot(week);
-  const who = new Map(state.profiles.map((p) => [p.id, p.name]));
+  const who = new Map(state.profiles.map((p) => [p.id, p]));
   const today = todayLocal();
   let i = 0;
 
@@ -186,15 +186,30 @@ function render() {
 
 function mealRow(m, slot, first, last, who, i) {
   const amount = mealAmount(m);
-  const title = (m.menu || m.buys.flatMap((b) => cleanLines(b.lines).map((l) => l.name)).filter(Boolean).join(', ') || nameOf(m.place_id) || '기록').trim();
-  const sub = mealSubline(nameOf(m.place_id), m.buys.map((b) => nameOf(b.how_id)));
-  const tag = m.eater ? `<span class="tag">${escapeHtml(who.get(m.eater) ?? '혼자')}</span>` : '';
+  const title = (m.menu || m.buys.flatMap((b) => cleanLines(b.lines).map((l) => l.name)).filter(Boolean).join(', ') || '기록').trim();
+  const place = nameOf(m.place_id);
+  const p = m.eater ? who.get(m.eater) : null;
+  const whoTag = m.eater
+    ? `<span class="tag who" style="background:color-mix(in srgb, ${escapeHtml(p?.color ?? '#888')} 16%, transparent); color:${escapeHtml(p?.color ?? '#888')}">${escapeHtml(p?.name ?? '혼자')}</span>`
+    : '<span class="tag who soft">같이</span>';
+  const buys = m.buys
+    .map((b) => {
+      const text = [b.shop?.trim(), buyLineText(b.lines)].filter(Boolean).join(' · ');
+      return `<div class="meal-buy"><span class="tag soft">${escapeHtml(nameOf(b.how_id) || '어떻게?')}</span>${text ? ` ${escapeHtml(text)}` : ''}</div>`;
+    })
+    .join('');
   return `
     <div class="tx-row meal-row" data-id="${m.id}" style="--i:${Math.min(i, 12)}">
-      <div class="meal-slot">${first ? SLOT_LABEL[slot] ?? '' : ''}</div>
+      <div class="meal-slot">
+        <span class="slot-name">${first ? SLOT_LABEL[slot] ?? '' : ''}</span>
+        ${whoTag}
+      </div>
       <div class="tx-main">
-        <div class="tx-cat">${escapeHtml(title)}${tag}</div>
-        ${sub ? `<div class="tx-memo">${escapeHtml(sub)}</div>` : ''}
+        <div class="meal-head">
+          <span class="tx-cat">${escapeHtml(title)}</span>
+          ${place ? `<span class="tag">${escapeHtml(place)}</span>` : ''}
+        </div>
+        ${buys}
       </div>
       <div class="tx-amount">${amount ? formatWon(amount) : ''}</div>
       ${last
@@ -206,7 +221,7 @@ function mealRow(m, slot, first, last, who, i) {
 function emptyRow(date, slot, i) {
   return `
     <div class="tx-row meal-row empty-slot" data-date="${date}" data-slot="${slot}" style="--i:${Math.min(i, 12)}">
-      <div class="meal-slot">${SLOT_LABEL[slot]}</div>
+      <div class="meal-slot"><span class="slot-name">${SLOT_LABEL[slot]}</span></div>
       <div class="tx-main muted">＋ 기록</div>
       <span class="slot-add" aria-hidden="true"></span>
     </div>`;
