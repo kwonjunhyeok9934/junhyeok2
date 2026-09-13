@@ -110,7 +110,7 @@ export async function refresh() {
     el.wrap.hidden = true;
     el.notice.hidden = false;
     el.notice.innerHTML = missingTable(err)
-      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 27·29번 섹션을 실행해 주세요.</p>`
+      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 전체를 한 번 실행해 주세요.</p>`
       : `<div class="retry">불러오지 못했어요<br>
           <button type="button" class="btn small" data-retry>다시 시도</button>
         </div>`;
@@ -221,7 +221,7 @@ async function toggleVisited(code) {
     if (on) state.visited.delete(code);
     else state.visited.add(code);
     render();
-    toast(missingTable(err) ? '여행 표가 아직 없어요. schema.sql 27번을 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
+    toast(missingTable(err) ? '여행 표가 아직 없어요. schema.sql 전체를 한 번 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
   } finally {
     state.pending.delete(code);
   }

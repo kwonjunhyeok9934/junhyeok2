@@ -197,7 +197,7 @@ export async function refresh() {
     el.empty.hidden = true;
     el.past.innerHTML = '';
     el.upcoming.innerHTML = missingTable(err)
-      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 29·31번 섹션을 실행해 주세요.</p>`
+      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 전체를 한 번 실행해 주세요.</p>`
       : `<div class="retry">불러오지 못했어요<br>
           <button type="button" class="btn small" data-retry>다시 시도</button>
         </div>`;
@@ -275,7 +275,7 @@ async function showDetail() {
     state.cats = cats;
   } catch (err) {
     console.error(err);
-    toast(missingTable(err) ? '준비물·일정 표가 아직 없어요. schema.sql 31·33번을 실행해 주세요' : `불러오지 못했어요: ${err.message ?? ''}`);
+    toast(missingTable(err) ? '준비물·일정 표가 아직 없어요. schema.sql 전체를 한 번 실행해 주세요' : `불러오지 못했어요: ${err.message ?? ''}`);
   }
   el.viewTitle.textContent = trip.title;
   if (signature() !== state.rendered) renderDetail();
@@ -615,7 +615,7 @@ async function savePlan() {
     console.error(err);
     toast(
       missingTable(err)
-        ? '일정 표가 아직 없어요. schema.sql 31·33·35번을 실행해 주세요'
+        ? '일정 표가 아직 없어요. schema.sql 전체를 한 번 실행해 주세요'
         : `저장에 실패했어요: ${err.message ?? ''}`,
     );
   } finally {
@@ -758,7 +758,7 @@ async function save() {
     console.error(err);
     toast(
       missingTable(err)
-        ? '여행 표가 아직 없어요. schema.sql 29번을 실행해 주세요'
+        ? '여행 표가 아직 없어요. schema.sql 전체를 한 번 실행해 주세요'
         : `저장에 실패했어요: ${err.message ?? ''}`,
     );
   } finally {
