@@ -567,6 +567,85 @@ export function pantryStats(items) {
   return { left, done, waiting };
 }
 
+// ---- 주문 스크린샷 읽기 ---------------------------------------------------------
+// OCR 로 읽어 낸 글을 '사 둔 것' 줄로 바꾼다. 컬리·쿠팡·윙잇은 화면이 서로 다르지만
+// "품목 이름 줄 → 그 아래 가격 줄" 이라는 뼈대는 같아서 그 뼈대만 본다.
+// 글자는 어차피 조금 틀리게 읽히므로, 여기서 완벽을 노리지 않고 담기 시트에 채워
+// 사람이 고쳐 저장하게 하는 것이 이 함수의 목적이다.
+
+// 가격·수량·구분선만 남은 줄인지 보려고 지우는 것들.
+const PRICE_RE = /(\d[\d,.]*)\s*원/g;
+const QTY_RE = /(\d+)\s*개/;
+
+// 품목 이름도, 가격 줄도 될 수 없는 줄 (배송·주문·결제 안내).
+const ORDER_NOISE = [
+  /배송/, /주문/, /결제/, /결재/, /상품\s*금액/, /상품금액/, /합계/, /할인/, /적립/, /쿠폰/,
+  /반품/, /교환/, /후기/, /영수증/, /카드/, /무이자/, /포인트/, /복사/, /적용/,
+  /^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}/, // 2026.09.09 22:45
+  /^[\d\s:().월일시분]+$/,                 // 9.10(목) 05:11 같은 줄
+];
+
+const isOrderNoise = (line) => ORDER_NOISE.some((re) => re.test(line));
+
+// 그 줄에 적힌 가격들 (큰 자릿수 쉼표가 마침표로 읽히는 일이 잦아 둘 다 받는다).
+function pricesIn(line) {
+  return [...String(line).matchAll(PRICE_RE)].map((m) => parseWon(m[1])).filter((n) => n > 0);
+}
+
+// 가격·수량 말고는 남는 게 거의 없는 줄 = 가격 줄.
+function isPriceLine(line, prices) {
+  if (!prices.length) return false;
+  const rest = String(line).replace(PRICE_RE, '').replace(QTY_RE, '').replace(/[\s|,.·\-/]/g, '');
+  return rest.length <= 2;
+}
+
+// OCR 글 → [{ name, amount }]. 이름이 없거나 가격이 0인 것은 버린다.
+export function parseOrderText(text) {
+  const lines = String(text ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const out = [];
+  let name = '';
+  for (const line of lines) {
+    const prices = pricesIn(line);
+    if (isPriceLine(line, prices)) {
+      if (name) {
+        // 할인 상품은 낸 값과 취소선 그은 원래 값이 같이 적힌다 — 싼 쪽이 실제로 낸 값이다.
+        const qty = Number(QTY_RE.exec(line)?.[1] ?? 1);
+        out.push({ name: qty > 1 ? `${name} x${qty}`.slice(0, 40) : name, amount: Math.min(...prices) });
+        name = '';
+      }
+      continue;
+    }
+    if (isOrderNoise(line)) continue;
+    // 가격이 섞인 설명 줄(= 가격 줄은 아닌 줄)은 이름으로 삼지 않는다.
+    if (!prices.length) name = line.slice(0, 40);
+  }
+  return out;
+}
+
+// 읽은 글에서 어느 카테고리인지 짐작한다 (못 찾으면 null — 사람이 칩을 누르면 된다).
+export function guessOrderHow(text, cats) {
+  const hay = String(text ?? '').toLowerCase();
+  const hit = (cats ?? [])
+    .filter((c) => c.kind === 'meal_how')
+    .find((c) => hay.includes(String(c.name).toLowerCase()));
+  if (hit) return hit.id;
+  if (/kurly|컬리/i.test(hay)) return (cats ?? []).find((c) => c.kind === 'meal_how' && c.name === '컬리')?.id ?? null;
+  return null;
+}
+
+// 읽은 글에서 주문 날짜 (2026.09.09 / 2026-09-09 / 2026. 9. 9). 없으면 null.
+export function guessOrderDate(text) {
+  const m = /(20\d{2})\s*[.\-/]\s*(\d{1,2})\s*[.\-/]\s*(\d{1,2})/.exec(String(text ?? ''));
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31) return null;
+  return `${y}-${pad2(Number(mo))}-${pad2(Number(d))}`;
+}
+
 // ---- 여행 ------------------------------------------------------------------
 
 // 다녀온 곳 집계: 전체 수와 시도별 { name, done, total }.

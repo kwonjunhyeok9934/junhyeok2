@@ -6,9 +6,10 @@ import { formatWon, parseWon } from './calc.js';
 export const ITEM_PLACEHOLDER = '품목 (선택)';
 
 // fixed = 배달료처럼 이름이 고정된 줄. 이름 칸은 읽기 전용이고 지울 수 없다.
-export function itemRowHtml(line, { last = false, fixed = false, placeholder = ITEM_PLACEHOLDER } = {}) {
+// stacked = 이름을 한 줄 통째로 쓰고 가격을 그 아래로 (긴 품목 이름을 끝까지 보여 줘야 할 때).
+export function itemRowHtml(line, { last = false, fixed = false, stacked = false, placeholder = ITEM_PLACEHOLDER } = {}) {
   return `
-    <div class="row">
+    <div class="row${stacked ? ' stacked' : ''}">
       <input type="text" data-role="name" placeholder="${escapeHtml(placeholder)}" maxlength="40" autocomplete="off"
              enterkeyhint="next" value="${escapeHtml(line.name ?? '')}"${fixed ? ' readonly' : ''}>
       <input type="text" data-role="price" class="price" inputmode="numeric" placeholder="0" autocomplete="off"
@@ -35,7 +36,8 @@ export function growItemRows(input, placeholder) {
   const box = input.closest('.set-items');
   const lastFree = [...(box?.children ?? [])].filter(isFreeRow).at(-1);
   if (box && input.closest('.row') === lastFree && (input.value.trim() || parseWon(input.value))) {
-    lastFree.insertAdjacentHTML('afterend', itemRowHtml({ name: '', amount: 0 }, { last: true, placeholder }));
+    const stacked = lastFree.classList.contains('stacked');
+    lastFree.insertAdjacentHTML('afterend', itemRowHtml({ name: '', amount: 0 }, { last: true, stacked, placeholder }));
     lastFree.querySelector('[data-act="del-item"]').style.visibility = '';
   }
 }

@@ -10,6 +10,7 @@ import {
   buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryPrice, pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
+  parseOrderText, guessOrderHow, guessOrderDate,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
 } from '../js/calc.js';
 
@@ -641,6 +642,98 @@ test('planMealSave: 빈 세트는 저장 계획에서 빠진다', () => {
 test('planMealDelete: 끼니 id 와 함께 지워질 거래를 알려 준다', () => {
   assert.deepEqual(planMealDelete(meals[0]), { mealId: 1, txIds: [91, 92] });
   assert.deepEqual(planMealDelete(meals[1]), { mealId: 2, txIds: [] });
+});
+
+// ---- 주문 스크린샷 읽기 ---------------------------------------------------------
+// 아래 글은 실제 컬리 주문 내역 화면을 한글 Tesseract 로 읽은 결과 그대로다
+// (200g→2009, 오징어짬뽕→오징어짱 처럼 틀리게 읽힌 것도 손대지 않았다).
+const KURLY_OCR = `주문 내역 상세
+2026.09.09 22:45
+주문번호 2426922450272
+충북 청주시 청원구 오창읍 과학산업3로 216 (오창반도유보라퍼스티지) 104동 2301호
+주문 상품
+배송완료 9.10(목) 05:11
+별배송
+[사조대림] 육식맨의 케제크라이너
+4,480원             1개
+별배송
+[사조대림] 육식맨의 리얼 비엔나
+4,480원             1개
+별배송
+[제각각] 청상추 2009
+3,940원             1개
+별배송
+[크라운] 산도 살구팝 3239
+5,380원 1
+별배송
+[농심] 오징어짱 5입
+5,300원 1
+배송 조회
+반품 접수
+후기 작성
+전체 상품 다시 담기
+결제 정보
+상품금액 33,600원
+배송비 0원
+할인금액 -3,000원
+결제금액 30,600원`;
+
+test('parseOrderText: 컬리 주문 화면에서 품목과 낸 값을 뽑는다', () => {
+  assert.deepEqual(parseOrderText(KURLY_OCR), [
+    { name: '[사조대림] 육식맨의 케제크라이너', amount: 4480 },
+    { name: '[사조대림] 육식맨의 리얼 비엔나', amount: 4480 },
+    { name: '[제각각] 청상추 2009', amount: 3940 },
+    { name: '[크라운] 산도 살구팝 3239', amount: 5380 },
+    { name: '[농심] 오징어짱 5입', amount: 5300 },
+  ]);
+});
+
+test('parseOrderText: 배송·주문·결제 줄은 품목이 되지 않는다', () => {
+  const names = parseOrderText(KURLY_OCR).map((i) => i.name).join(' ');
+  for (const bad of ['배송', '주문', '결제', '상품금액', '할인', '청주시']) {
+    assert.ok(!names.includes(bad), `${bad} 가 품목으로 들어갔다: ${names}`);
+  }
+  // 맨 아래 결제 요약(33,600 / 30,600) 도 품목이 아니다
+  assert.ok(!parseOrderText(KURLY_OCR).some((i) => i.amount === 30600 || i.amount === 33600));
+});
+
+test('parseOrderText: 할인 상품은 취소선 그은 값 말고 낸 값을 쓴다', () => {
+  assert.deepEqual(parseOrderText('[사조대림] 케제크라이너\n4,480원 4,980원 | 1개'),
+    [{ name: '[사조대림] 케제크라이너', amount: 4480 }]);
+});
+
+test('parseOrderText: 쉼표가 마침표로 읽혀도 값은 같다 (작은 스크린샷)', () => {
+  assert.deepEqual(parseOrderText('[크라운] 산도 살구팝\n5.380원'), [{ name: '[크라운] 산도 살구팝', amount: 5380 }]);
+});
+
+test('parseOrderText: 여러 개 산 것은 이름에 수량을 남긴다 (값은 사람이 확인)', () => {
+  assert.deepEqual(parseOrderText('유기농 콩나물 300g\n4,400원 | 2개'),
+    [{ name: '유기농 콩나물 300g x2', amount: 4400 }]);
+});
+
+test('parseOrderText: 가격 줄이 없으면 아무것도 안 담는다', () => {
+  assert.deepEqual(parseOrderText('그냥 메모\n아무것도 아님'), []);
+  assert.deepEqual(parseOrderText(''), []);
+  assert.deepEqual(parseOrderText(null), []);
+});
+
+test('guessOrderHow: 이름이 보일 때만 짐작하고, 아니면 사람이 고르게 둔다', () => {
+  // 컬리 주문 화면에는 정작 '컬리' 라는 글자가 없을 때가 많다 (상품 이름에 우연히 들어갈 뿐).
+  // 그래서 못 찾는 것이 정상이고, 그때는 시트에서 고른 칩을 그대로 쓴다.
+  assert.equal(guessOrderHow(KURLY_OCR, mealCats), null);
+  assert.equal(guessOrderHow(`${KURLY_OCR}\n[컬리멤버스] 데일리 물티슈`, mealCats), 10);
+  assert.equal(guessOrderHow('Kurly 주문 내역', mealCats), 10);
+  assert.equal(guessOrderHow('쿠팡 주문 내역', [...mealCats, { id: 20, name: '쿠팡', kind: 'meal_how' }]), 20);
+  assert.equal(guessOrderHow('아무 글', mealCats), null);
+  assert.equal(guessOrderHow(KURLY_OCR, null), null);
+});
+
+test('guessOrderDate: 주문 날짜를 읽는다', () => {
+  assert.equal(guessOrderDate(KURLY_OCR), '2026-09-09');
+  assert.equal(guessOrderDate('2026-09-09 22:45'), '2026-09-09');
+  assert.equal(guessOrderDate('2026. 9. 9'), '2026-09-09');
+  assert.equal(guessOrderDate('2026.19.09'), null); // 달이 19월일 수는 없다
+  assert.equal(guessOrderDate('날짜 없음'), null);
 });
 
 // ---- 여행 ------------------------------------------------------------------

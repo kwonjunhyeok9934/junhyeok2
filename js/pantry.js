@@ -1,11 +1,18 @@
 // 사 둔 것 탭: 윙잇·컬리·쿠팡·마트·편의점에서 산 품목을 미리 담아 둔다.
 // 담을 때는 가계부에 안 들어간다 — 식비에서 처음 꺼내 먹을 때 한 번만 값이 실린다(js/meal.js).
 // 목록의 원본이 여기라, 식비 탭은 items() 로 가져다 드롭다운을 만든다.
+//
+// 주문 스크린샷을 고르면 폰 안에서 글자를 읽어(js/ocr.js) 품목·가격 줄을 채워 준다.
+// 글자는 조금씩 틀리게 읽히므로 **바로 저장하지 않는다** — 사람이 보고 고친 뒤 저장한다.
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
-import { todayLocal, shiftDay, formatWon, howNeedsShop, groupPantryByHow, pantryStats, tagColor } from './calc.js';
+import {
+  todayLocal, shiftDay, formatWon, howNeedsShop, groupPantryByHow, pantryStats, tagColor,
+  parseOrderText, guessOrderHow, guessOrderDate,
+} from './calc.js';
 import { fetchCategories } from './categories.js';
 import { itemRowHtml, growItemRows, readFreeRow, onItemRowsKeydown } from './itemrow.js';
+import * as ocr from './ocr.js';
 
 const PLACEHOLDER = '품목 (예: 삼겹살)';
 
@@ -33,6 +40,8 @@ export function init({ userId }) {
     sheet: $('#sheet-pantry'), form: $('#pantry-form'), hows: $('#pantry-hows'), date: $('#pantry-date'),
     rows: $('#pantry-items'), total: $('#pantry-total'), charged: $('#pantry-charged'),
     save: $('#pantry-save'), del: $('#pantry-delete'),
+    shotRow: $('#pantry-shot-row'), shot: $('#pantry-shot'),
+    shotFile: $('#pantry-shot-file'), shotNote: $('#pantry-shot-note'),
   };
 
   bindSheetBackdrop(el.sheet);
@@ -47,6 +56,11 @@ export function init({ userId }) {
   el.rows.addEventListener('keydown', onItemRowsKeydown);
   el.form.addEventListener('submit', (e) => { e.preventDefault(); save(); });
   el.del.addEventListener('click', remove);
+  el.shot.addEventListener('click', () => {
+    el.shotFile.value = ''; // 같은 사진을 다시 골라도 change 가 오게
+    el.shotFile.click();
+  });
+  el.shotFile.addEventListener('change', onShotPick);
 }
 
 function unwrap({ data, error }) {
@@ -208,10 +222,13 @@ function openSheetFor(item) {
   el.date.value = item?.bought_on ?? todayLocal();
   el.del.hidden = !item;
   el.charged.hidden = !item?.charged_buy_id;
+  el.shotRow.hidden = !!item || !ocr.supported(); // 한 품목을 고칠 때는 스크린샷 읽기가 필요 없다
+  el.shot.disabled = false;
+  el.shotNote.hidden = true;
   renderHows();
   el.rows.innerHTML = item
     ? editRowHtml(item)
-    : itemRowHtml({ name: '', amount: 0 }, { last: true, placeholder: PLACEHOLDER });
+    : itemRowHtml({ name: '', amount: 0 }, { last: true, stacked: true, placeholder: PLACEHOLDER });
   recalcTotal();
   updateSaveState();
   openSheet(el.sheet);
@@ -222,7 +239,7 @@ function openSheetFor(item) {
 // 그 끼니의 품목 줄이 원본이라 여기서 바꾸면 둘이 어긋난다.
 function editRowHtml(item) {
   return `
-    <div class="row">
+    <div class="row stacked">
       <input type="text" data-role="name" placeholder="${PLACEHOLDER}" maxlength="40" autocomplete="off"
              enterkeyhint="done" value="${escapeHtml(item.name)}">
       <input type="text" data-role="price" class="price" inputmode="numeric" placeholder="0" autocomplete="off"
@@ -266,6 +283,51 @@ function onRowsInput(e) {
 function onRowsClick(e) {
   if (!e.target.closest('[data-act="del-item"]')) return;
   e.target.closest('.row').remove();
+  recalcTotal();
+  updateSaveState();
+}
+
+// ---- 주문 스크린샷에서 읽기 -----------------------------------------------------
+
+async function onShotPick(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  el.shot.disabled = true;
+  el.shotNote.hidden = false;
+  el.shotNote.textContent = '읽는 중… 처음 한 번은 한글 데이터를 받느라 좀 걸려요';
+  try {
+    const text = await ocr.readText(file, (p) => {
+      el.shotNote.textContent = `읽는 중… ${Math.round(p * 100)}%`;
+    });
+    const found = parseOrderText(text);
+    if (!found.length) {
+      el.shotNote.textContent = '품목을 못 찾았어요. 아래에 직접 적어 주세요.';
+      return;
+    }
+    const how = guessOrderHow(text, state.cats);
+    if (how) {
+      state.howId = how;
+      renderHows();
+    }
+    const date = guessOrderDate(text);
+    if (date) el.date.value = date;
+    fillRows(found);
+    haptic();
+    el.shotNote.textContent = `${found.length}개를 읽었어요. 틀린 건 고치고, 필요 없는 줄은 ✕ 로 빼 주세요.`;
+  } catch (err) {
+    console.error(err);
+    el.shotNote.textContent = '스크린샷을 읽지 못했어요. 아래에 직접 적어 주세요.';
+  } finally {
+    el.shot.disabled = false;
+  }
+}
+
+// 읽은 품목을 줄로 깐다. 이미 적어 둔 줄은 그대로 두고 그 뒤에 붙인다.
+function fillRows(found) {
+  const typed = readRows().filter((l) => l.name || l.amount);
+  el.rows.innerHTML =
+    [...typed, ...found].map((l) => itemRowHtml(l, { stacked: true, placeholder: PLACEHOLDER })).join('') +
+    itemRowHtml({ name: '', amount: 0 }, { last: true, stacked: true, placeholder: PLACEHOLDER });
   recalcTotal();
   updateSaveState();
 }

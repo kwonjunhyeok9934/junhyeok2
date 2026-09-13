@@ -4,3 +4,8 @@ node_modules/
 
 # 지도 원본 (tools/build_korea_map.py 가 필요할 때 내려받는다)
 tools/skorea-municipalities-2018-geo.json
+
+# 스크린샷 읽기 시험용 임시 사본 (tesseract.js·한글 데이터를 같은 출처로 놓고 돌릴 때)
+__tess/
+__ocr.html
+__img.png

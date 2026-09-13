@@ -404,6 +404,12 @@
   <div class="sheet-backdrop"></div>
   <div class="sheet-panel">
     <form id="pantry-form">
+      <div id="pantry-shot-row">
+        <button type="button" id="pantry-shot" class="btn wide">📷 주문 스크린샷에서 읽기</button>
+        <input id="pantry-shot-file" type="file" accept="image/*" hidden>
+        <p id="pantry-shot-note" class="hint" hidden></p>
+      </div>
+
       <div>
         <div class="field-label">어디서 샀어요?</div>
         <div id="pantry-hows" class="chips"></div>

@@ -531,6 +531,13 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .meal-set select:focus { outline: 0; box-shadow: 0 0 0 2px var(--accent); }
 
 /* 사 둔 것에서 꺼낸 품목 줄: 칸이 아니라 읽기용이라 글자로만 놓는다 */
+/* 담기 시트의 줄: 이름은 한 줄 통째로, 가격은 그 아래 (읽은 품목 이름을 끝까지 보고 고칠 수 있게) */
+/* 이름과 그 아래 가격이 한 덩어리로 보이게: 안쪽은 붙이고 줄과 줄 사이는 띄운다 */
+.row.stacked { flex-wrap: wrap; row-gap: 4px; margin-bottom: 8px; }
+.row.stacked:last-child { margin-bottom: 0; }
+.row.stacked > [data-role="name"] { flex: 1 1 100%; }
+.row.stacked > .price { flex: 0 0 120px; }
+
 .pantry-line { background: var(--bg); border-radius: 12px; padding: 9px 12px; }
 .pantry-line .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pantry-line .pr { flex: none; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }

@@ -13,7 +13,7 @@ import * as pantry from './pantry.js';
 import * as travel from './travel.js';
 import * as trip from './trip.js';
 
-const APP_VERSION = 'v24'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v25'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
