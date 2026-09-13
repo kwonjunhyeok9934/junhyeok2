@@ -96,6 +96,20 @@
       <div id="fixed-list"><div class="skel"></div><div class="skel"></div></div>
     </section>
 
+    <section id="tab-pantry" class="tab" hidden>
+      <div class="card fixed-total">
+        <span class="sum-label">사 둔 것 · 남은 것</span>
+        <strong id="pantry-left">0</strong>
+        <p id="pantry-waiting" class="hint" hidden></p>
+      </div>
+
+      <h2 class="list-head" id="pantry-list-head">담아 둔 것
+        <button type="button" id="pantry-done-toggle" class="btn small" hidden></button>
+      </h2>
+      <div id="pantry-list"><div class="skel"></div><div class="skel"></div></div>
+      <div id="pantry-notice" hidden></div>
+    </section>
+
     <section id="tab-todo" class="tab" hidden>
       <form id="todo-quick" class="row quick">
         <input id="todo-quick-title" type="text" placeholder="할일을 적고 Enter" maxlength="80" autocomplete="off">
@@ -138,17 +152,6 @@
         <div class="sum-item"><span class="sum-label">직전 주</span><strong id="meal-sum-prev">0</strong></div>
         <div class="sum-item"><span class="sum-label">차이</span><strong id="meal-sum-diff">0</strong></div>
       </div>
-
-      <details id="meal-pantry" class="card" hidden>
-        <summary><span>사 둔 것</span><span id="meal-pantry-count"></span></summary>
-        <div id="meal-pantry-list"></div>
-        <p id="meal-pantry-note" class="hint" hidden></p>
-        <div class="row" style="margin-top:10px">
-          <button type="button" id="meal-pantry-add" class="btn small primary">＋ 담기</button>
-          <button type="button" id="meal-pantry-done" class="btn small" hidden>다 쓴 것</button>
-        </div>
-      </details>
-      <div id="meal-pantry-notice" hidden></div>
 
       <p id="meal-onboard" class="hint" hidden>칸을 눌러 뭘 먹었는지 적어 보세요. 금액은 안 적어도 돼요.</p>
       <div id="meal-week"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>

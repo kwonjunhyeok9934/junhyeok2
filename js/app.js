@@ -9,10 +9,11 @@ import * as home from './home.js';
 import * as push from './push.js';
 import * as anniv from './anniv.js';
 import * as meal from './meal.js';
+import * as pantry from './pantry.js';
 import * as travel from './travel.js';
 import * as trip from './trip.js';
 
-const APP_VERSION = 'v23'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v24'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -29,6 +30,7 @@ const TABS = {
   ledger: { title: '가계부', el: $('#tab-ledger'), group: 'money' },
   meal: { title: '식비', el: $('#tab-meal'), group: 'money' },
   fixed: { title: '고정비', el: $('#tab-fixed'), group: 'money' },
+  pantry: { title: '사둔것', el: $('#tab-pantry'), group: 'money' },
   schedule: { title: '스케줄', el: $('#tab-schedule'), group: 'plan' },
   todo: { title: '할일', el: $('#tab-todo'), group: 'plan' },
   travel: { title: '지도', el: $('#tab-travel'), group: 'travel' },
@@ -38,7 +40,7 @@ const TABS = {
 // 아래 탭바 네 칸. 한 칸 안의 화면은 위쪽 작은 탭으로 옮겨 다닌다.
 const GROUPS = {
   home: ['home'],
-  money: ['ledger', 'meal', 'fixed'],
+  money: ['ledger', 'meal', 'fixed', 'pantry'],
   plan: ['schedule', 'todo'],
   travel: ['travel', 'trips'],
 };
@@ -147,6 +149,7 @@ function enterMain(user) {
   schedule.init({ userId: user.id });
   fixed.init();
   meal.init({ userId: user.id, onTxChange: () => { ledger.refresh(); home.refresh(); } });
+  pantry.init({ userId: user.id });
   travel.init({ userId: user.id });
   trip.init({
     userId: user.id,
@@ -174,6 +177,7 @@ function refreshAll() {
   schedule.refresh();
   fixed.refresh();
   meal.refresh();
+  pantry.refresh();
   travel.refresh();
   trip.refresh();
 }
@@ -207,7 +211,7 @@ function subscribeRealtime() {
   // 사 둔 것도 나중에 생겼다 (31번 SQL). 같은 이유로 따로 둔다.
   const pantryCh = sb
     .channel('pantry-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items' }, () => meal.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items' }, () => pantry.refresh())
     .subscribe();
   channels = [main, travelCh, pantryCh];
 }
@@ -233,6 +237,7 @@ function bindTabs() {
     if (tab === 'schedule') schedule.openNew();
     else if (tab === 'fixed') fixed.openNew();
     else if (tab === 'meal') meal.openNew();
+    else if (tab === 'pantry') pantry.openNew();
     else if (tab === 'trips') trip.openNew();
     else ledger.openNew(); // 홈·가계부는 지출 입력
   });

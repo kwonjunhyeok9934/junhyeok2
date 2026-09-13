@@ -191,13 +191,11 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .sum-label { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
 .sum-item strong { display: block; font-size: 16px; margin-top: 4px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .income { color: var(--income); }
-#cat-totals, #meal-cat-totals, #meal-pantry { margin-bottom: 14px; padding: 14px 16px; }
-#cat-totals summary, #meal-cat-totals summary, #meal-pantry summary { cursor: pointer; font-weight: 600; color: var(--text-2); font-size: 14px; list-style: none; display: flex; justify-content: space-between; }
-#cat-totals summary::-webkit-details-marker, #meal-cat-totals summary::-webkit-details-marker,
-#meal-pantry summary::-webkit-details-marker { display: none; }
-#cat-totals summary::after, #meal-cat-totals summary::after, #meal-pantry summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
-#cat-totals[open] summary::after, #meal-cat-totals[open] summary::after,
-#meal-pantry[open] summary::after { transform: rotate(180deg); }
+#cat-totals, #meal-cat-totals { margin-bottom: 14px; padding: 14px 16px; }
+#cat-totals summary, #meal-cat-totals summary { cursor: pointer; font-weight: 600; color: var(--text-2); font-size: 14px; list-style: none; display: flex; justify-content: space-between; }
+#cat-totals summary::-webkit-details-marker, #meal-cat-totals summary::-webkit-details-marker { display: none; }
+#cat-totals summary::after, #meal-cat-totals summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
+#cat-totals[open] summary::after, #meal-cat-totals[open] summary::after { transform: rotate(180deg); }
 #cat-totals-list, #meal-cat-list { margin-top: 10px; }
 #cat-totals-list li, #meal-cat-list li { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 
@@ -501,12 +499,13 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .seg span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- 사 둔 것 (담아 두고 식비에서 꺼내 쓰는 품목) ---- */
-/* 카드 안 목록: 카테고리 머리(day-head)로 나누고 그 아래 품목 줄 */
-#meal-pantry summary span:last-child { font-weight: 500; color: var(--muted); margin-right: 6px; }
-#meal-pantry-list { margin-top: 6px; }
-#meal-pantry-list .day-head { padding: 12px 0 4px; }
-#meal-pantry-list .day-head .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
-.pantry-row { margin-bottom: 6px; padding: 10px 12px; box-shadow: none; background: var(--bg); gap: 10px; }
+/* 탭 목록: 식비 주간 목록처럼 카테고리별 카드(day-card) 안에 품목 줄이 쌓인다 */
+#tab-pantry .fixed-total strong { font-size: 34px; }
+#tab-pantry .fixed-total .hint { margin-top: 8px; }
+#pantry-list .day-head .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pantry-row { margin-bottom: 6px; padding: 10px 12px; box-shadow: none; background: var(--bg); gap: 10px; align-items: center; }
+.pantry-row:last-child { margin-bottom: 0; }
+.pantry-row .tag.how { margin-left: 0; flex: none; font-variant-numeric: tabular-nums; }
 .pantry-row .tx-memo { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .pantry-row .tx-amount { font-size: 15px; }
 .pantry-row.done { opacity: .55; }

@@ -1,9 +1,9 @@
-# 우리집 — 인수인계 (2026-09-13 기준, v23)
+# 우리집 — 인수인계 (2026-09-13 기준, v24)
 
 두 사람(부부)이 쓰는 PWA. 배포: https://junhyeok2.vercel.app · 저장소: kwonjunhyeok9934/junhyeok2 (`main`에 바로 커밋)
 
 ## 구성
-- 화면: HTML/CSS/JS 모듈, 빌드 없음. `js/app.js`가 진입점, 탭별 모듈(`home/ledger/fixed/todo/schedule/meal/travel/trip`), 공용(`ui/calc/supabase/categories/push/weather/anniv`)
+- 화면: HTML/CSS/JS 모듈, 빌드 없음. `js/app.js`가 진입점, 탭별 모듈(`home/ledger/fixed/todo/schedule/meal/pantry/travel/trip`), 공용(`ui/calc/supabase/categories/itemrow/push/weather/anniv`)
 - 데이터·로그인·실시간·푸시: Supabase (프로젝트 jfrmpmlbweyecwfwlesh). 표 14개, RLS "로그인 사용자 전체 읽기·쓰기", 자가 가입 OFF
 - 호스팅: Vercel, `main` 푸시마다 자동 배포. `sw.js`는 network-first 캐시 — 파일 바꾸면 `CACHE` 버전과 `app.js`의 `APP_VERSION`을 같이 올린다(설정 맨 아래에 표시)
 - 알림: 웹 푸시. 발송은 Edge Function(대시보드 이름 `rapid-task`), DB 트리거(`notify_webhook`)가 호출. 설정 순서는 `docs/알림_설정.md`
@@ -11,11 +11,11 @@
 
 ## 기능 (탭 순서)
 아래 탭바는 **홈 · 가계부 · 일정 · 여행** 네 칸. 칸 안에서 상단 작은 탭(`#subtabs`, app.js 가 그린다)으로 화면을 바꾼다.
-화면은 여덟 개이고 예전 주소 해시(`#ledger` `#meal` `#fixed` `#schedule` `#todo`)는 그대로다 — 알림 딥링크를 건드리지 않으려고 그렇게 뒀다.
+화면은 아홉 개이고 예전 주소 해시(`#ledger` `#meal` `#fixed` `#schedule` `#todo`)는 그대로다 — 알림 딥링크를 건드리지 않으려고 그렇게 뒀다.
 탭바를 다시 누르면 그 칸에서 마지막으로 보던 화면으로 돌아간다(`lastSeen`).
 
 - 홈: 히어로·기념일 D-day·날씨/미세먼지·오늘 일정·할일
-- 가계부 칸: 가계부(월/기간 조회, 월별 차트, 카테고리) · 식비(주간 식단, 누가·어디서 + '어떻게' 세트별 품목·가격, 사 둔 것) · 고정비(주인별, 카테고리 칩)
+- 가계부 칸: 가계부(월/기간 조회, 월별 차트, 카테고리) · 식비(주간 식단, 누가·어디서 + '어떻게' 세트별 품목·가격) · 고정비(주인별, 카테고리 칩) · 사둔것(미리 담아 둔 품목)
 - 일정 칸: 스케줄(월간 달력) · 할일(해야함/완료됨, 담당·마감)
 - 여행 칸: 지도(시군구 색칠·지역 시트) · 내 여행(여행 목록·상세·준비물)
 
@@ -64,8 +64,12 @@
 - `save_meal` 은 여기서도 정책이 없다: **값이 실린 줄이 곧 전가를 가져간다**는 기계적 규칙뿐이고,
   누구에게 값을 실을지는 `js/calc.js` 의 `pantryPrice` 가 정한다(이미 다른 세트가 냈으면 0,
   지금 고치는 그 세트가 냈으면 그대로 — 뺐다 도로 넣었을 때 돈이 사라지면 안 된다).
-- 화면은 식비 탭의 접이식 카드(남은 것 목록·담기·다 쓴 것)와 `#sheet-pantry`(담기·고치기) 둘.
-  세트 안에서는 `<select data-role="pantry">` 로 꺼내고, 꺼낸 줄은 칸이 아니라 `data-*` 로 값을 들고 있다.
+- 화면은 **사둔것 탭**(`js/pantry.js`, 고정비 옆 작은 탭)과 `#sheet-pantry`(＋ 로 담기·줄 눌러 고치기) 둘.
+  식비 세트 안에서는 `<select data-role="pantry">` 로 꺼내고, 꺼낸 줄은 칸이 아니라 `data-*` 로 값을 들고 있다.
+- **목록의 원본은 `pantry.js` 하나**다. 식비 탭은 `pantry.items()` 로 읽고 `pantry.load()` 로 같이 받아 온다
+  (세트 드롭다운이 최신을 봐야 해서). 반대 방향 import 는 없다 — travel→trip 과 같은 모양.
+- `[이름][가격] 줄이 이어지고 마지막 줄에 적으면 빈 줄이 하나 더` 붙는 편집기는 `js/itemrow.js` 로 빼서
+  식비 세트와 담기 시트가 같이 쓴다. 줄을 담는 상자는 둘 다 `.set-items` 다.
 - 이미 가계부로 넘어간 품목은 **가격 칸이 잠긴다**(고치려면 그 끼니에서). 두 곳에 같은 값이 있으면 어긋난다.
 - 담기 칩에는 배달·포장·외식이 안 나온다(`howNeedsShop` 인 것들 — 갈 때마다 가게가 달라 담아 둘 게 없다).
 - 목록은 남은 것 전부 + **다 쓴 것은 최근 두 달치**만 받는다(`loadPantry` 의 `.or`).
