@@ -1,4 +1,4 @@
-# 우리집 — 인수인계 (2026-09-13 기준, v26)
+# 우리집 — 인수인계 (2026-09-13 기준, v27)
 
 두 사람(부부)이 쓰는 PWA. 배포: https://junhyeok2.vercel.app · 저장소: kwonjunhyeok9934/junhyeok2 (`main`에 바로 커밋)
 
@@ -75,8 +75,12 @@
   대분류는 `packing_items.group_name` (자유 문자열, 기본 분류는 `js/packing.js` 의 `BASE_GROUPS`).
   상세에서는 `<details class="fold">` 로 접힌다. 기본값은 '여행 전이면 펼침'이고, 직접 접었다 펴면 `state.packingOpen` 에
   기억해 둔다 — 체크할 때마다 상세를 통째로 다시 그리기 때문에 기억해 두지 않으면 접힘이 풀린다.
-- **일정은 `trip_plans`**. 하루에 여러 줄이고 "어디(place) + 분류(category_id, `kind='trip'`) + 얼마(amount)".
-  가계부 거래는 늘 `expense/여행` 카테고리이고 분류는 메모에 들어간다(`경주시 · 티켓 · 첨성대`) — 가계부에서 '여행' 한 덩어리로 보게. 금액이 있으면 가계부 거래 하나와 1:1 로 붙는다
+- **일정은 `trip_plans`(장소) + `trip_costs`(그 장소에서 쓴 돈)** 2단이다. 한 장소에서 티켓도 끊고 굿즈도 사기 때문.
+  지출 줄 하나 = 가계부 거래 하나(`trip_costs.transaction_id`), 분류는 `categories` 의 `kind='trip'`.
+  쓰기는 `save_trip_plan(p jsonb)` RPC 한 번(`costs` 배열 + `removed` 배열), 줄을 지우면 AFTER DELETE 트리거가 거래까지 지운다.
+  가계부 거래는 늘 `expense/여행` 카테고리이고 분류는 메모에 들어간다(`경주시 · 티켓 · 첨성대`) — 가계부에서 '여행' 한 덩어리로 보게.
+- 상세는 **같은 내용이면 다시 그리지 않는다**(`signature()`), 준비물 체크는 그 줄만 고친다(`paintPacked()`).
+  통째로 다시 그리면 체크할 때마다 화면이 눈에 띄게 흔들린다 — 실시간 메아리로도 한 번 더 그려지기 때문에 둘 다 필요하다. 금액이 있으면 가계부 거래 하나와 1:1 로 붙는다
   (식비 `meal_buys` 와 같은 방식). 쓰기는 `save_trip_plan(p jsonb)` RPC 한 번, 줄을 지우면 AFTER DELETE 트리거가 거래까지 지운다.
   카테고리는 `expense/여행` (31번이 없으면 만든다).
 - '가계부에서 이 기간 보기' 는 `ledger.showRange(start, end)` 로 조회 기간을 바꾼 뒤 탭을 옮긴다.

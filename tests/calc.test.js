@@ -10,7 +10,7 @@ import {
   buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
-  nextTripName, tripDates, groupPlansByDate, sumPlans, groupPacking,
+  nextTripName, tripDates, groupPlansByDate, sumPlans, sumCosts, groupPacking,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -661,10 +661,11 @@ test('tripDates: 기간의 날짜들', () => {
 });
 
 const plans = [
-  { id: 1, date: '2026-09-14', place: '성산일출봉', amount: 5000, created_at: '2026-09-14T01:00:00Z' },
-  { id: 2, date: '2026-09-13', place: '공항', amount: 0, created_at: '2026-09-13T01:00:00Z' },
-  { id: 3, date: '2026-09-13', place: '점심', amount: 24000, created_at: '2026-09-13T02:00:00Z' },
-  { id: 4, date: '2026-10-01', place: '기간 밖', amount: 1000, created_at: '2026-09-13T00:30:00Z' },
+  { id: 1, date: '2026-09-14', place: '성산일출봉', created_at: '2026-09-14T01:00:00Z',
+    costs: [{ id: 1, amount: 5000 }, { id: 2, amount: 12000 }] },       // 티켓 + 굿즈
+  { id: 2, date: '2026-09-13', place: '공항', costs: [], created_at: '2026-09-13T01:00:00Z' },
+  { id: 3, date: '2026-09-13', place: '점심', costs: [{ id: 3, amount: 24000 }], created_at: '2026-09-13T02:00:00Z' },
+  { id: 4, date: '2026-10-01', place: '기간 밖', costs: [{ id: 4, amount: 1000 }], created_at: '2026-09-13T00:30:00Z' },
 ];
 
 test('groupPlansByDate: 일차별로 묶고 적은 순서대로', () => {
@@ -675,8 +676,15 @@ test('groupPlansByDate: 일차별로 묶고 적은 순서대로', () => {
   assert.deepEqual(map.get('2026-09-15'), []);
 });
 
+test('sumCosts: 한 장소에 붙은 지출 줄들', () => {
+  assert.equal(sumCosts(plans[0]), 17000);   // 티켓 5,000 + 굿즈 12,000
+  assert.equal(sumCosts(plans[1]), 0);       // 돈 안 쓴 장소
+  assert.equal(sumCosts({}), 0);
+  assert.equal(sumCosts(null), 0);
+});
+
 test('sumPlans: 쓴 돈 합계', () => {
-  assert.equal(sumPlans(plans), 30000);
+  assert.equal(sumPlans(plans), 42000);
   assert.equal(sumPlans([]), 0);
 });
 

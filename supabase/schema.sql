@@ -692,7 +692,14 @@ create table if not exists trip_plans (
 );
 create index if not exists trip_plans_trip_idx on trip_plans (trip_id, date);
 -- 한 거래를 두 줄이 가리키면 합계가 두 번 잡힌다. null 은 여러 개 허용된다.
-create unique index if not exists trip_plans_transaction_id_key on trip_plans (transaction_id);
+-- (35번이 이 열을 떼어 낸다. 이미 뗀 뒤 다시 실행해도 되도록 열이 있을 때만 만든다.)
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_name = 'trip_plans' and column_name = 'transaction_id') then
+    create unique index if not exists trip_plans_transaction_id_key on trip_plans (transaction_id);
+  end if;
+end $$;
 
 alter table packing_items enable row level security;
 alter table trip_packed   enable row level security;
@@ -865,6 +872,140 @@ begin
   return v_id;
 end $$;
 
+-- 35. 일정 한 줄에 지출 여러 개 ------------------------------------------------------
+-- 성산일출봉에서 티켓도 끊고 굿즈도 산다. 장소 하나에 (분류 + 금액) 줄을 여러 개 붙인다.
+-- 줄 하나 = 가계부 거래 하나 (식비의 meal_buys 와 같은 방식). 줄을 지우면 트리거가 거래도 지운다.
+-- 31·33번에서 만든 '장소 하나에 금액 하나' 는 여기서 지출 줄로 옮기고 그 열들을 뗀다.
+
+create table if not exists trip_costs (
+  id             bigint generated always as identity primary key,
+  plan_id        bigint not null references trip_plans(id) on delete cascade,
+  category_id    bigint references categories(id) on delete set null,   -- kind='trip'
+  amount         integer not null check (amount > 0),
+  transaction_id bigint references transactions(id) on delete set null,
+  sort_order     integer not null default 0,
+  created_by     uuid not null references auth.users(id),
+  created_at     timestamptz not null default now()
+);
+create index if not exists trip_costs_plan_idx on trip_costs (plan_id);
+-- 한 거래를 두 줄이 가리키면 합계가 두 번 잡힌다. null 은 여러 개 허용된다.
+create unique index if not exists trip_costs_transaction_id_key on trip_costs (transaction_id);
+
+alter table trip_costs enable row level security;
+drop policy if exists "auth all" on trip_costs;
+create policy "auth all" on trip_costs for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'trip_costs') then
+    alter publication supabase_realtime add table trip_costs;
+  end if;
+end $$;
+
+-- 31·33번 구조로 적어 둔 금액을 지출 줄로 옮기고, 그 열들을 뗀다 (두 번 실행해도 안전하게).
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_name = 'trip_plans' and column_name = 'amount') then
+    insert into trip_costs (plan_id, category_id, amount, transaction_id, created_by)
+    select id, category_id, amount, transaction_id, created_by from trip_plans where amount > 0;
+    alter table trip_plans drop column amount;
+    alter table trip_plans drop column if exists category_id;
+    alter table trip_plans drop column if exists transaction_id;
+  end if;
+end $$;
+
+-- 지출 줄이 사라지면 그 거래도 사라진다 (일정·여행을 지워 cascade 로 지워질 때도 돈다).
+create or replace function trip_cost_drop_tx() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.transaction_id is not null then
+    delete from transactions where id = old.transaction_id;
+  end if;
+  return null;
+end $$;
+
+drop trigger if exists trip_costs_after_delete on trip_costs;
+create trigger trip_costs_after_delete after delete on trip_costs
+  for each row execute function trip_cost_drop_tx();
+
+-- 31번의 트리거·함수는 이제 필요 없다 (금액은 trip_costs 에만 있다).
+drop trigger if exists trip_plans_after_delete on trip_plans;
+drop function if exists trip_plan_drop_tx();
+
+-- 일정 한 줄 저장: 장소와 그 아래 지출 줄들, 가계부 거래까지 한 번에 쓴다.
+--   costs   = [{ id, category_id, amount, transaction_id, sort_order, tx_memo }, …]  (금액이 있는 줄만)
+--   removed = 화면에서 지운 지출 줄 id 들
+create or replace function save_trip_plan(p jsonb) returns bigint
+language plpgsql as $$
+declare
+  v_id    bigint := nullif(p ->> 'id', '')::bigint;
+  v_user  uuid   := auth.uid();
+  v_date  date   := (p ->> 'date')::date;
+  v_txcat bigint := nullif(p ->> 'tx_category_id', '')::bigint;
+  c       jsonb;
+  v_cost  bigint;
+  v_tx    bigint;
+  v_amt   int;
+  v_memo  text;
+begin
+  -- 1) 장소
+  if v_id is null then
+    insert into trip_plans (trip_id, date, place, memo, created_by)
+    values ((p ->> 'trip_id')::bigint, v_date, coalesce(p ->> 'place', ''), coalesce(p ->> 'memo', ''), v_user)
+    returning id into v_id;
+  else
+    update trip_plans set date = v_date, place = coalesce(p ->> 'place', ''), memo = coalesce(p ->> 'memo', '')
+    where id = v_id;
+    if not found then   -- 상대가 지운 줄 → 새로 만든다
+      insert into trip_plans (trip_id, date, place, memo, created_by)
+      values ((p ->> 'trip_id')::bigint, v_date, coalesce(p ->> 'place', ''), coalesce(p ->> 'memo', ''), v_user)
+      returning id into v_id;
+    end if;
+  end if;
+
+  -- 2) 화면에서 뺀 지출 줄만 지운다 (트리거가 그 거래까지 지운다)
+  delete from trip_costs
+  where plan_id = v_id
+    and id in (select value::bigint from jsonb_array_elements_text(coalesce(p -> 'removed', '[]'::jsonb)));
+
+  -- 3) 지출 줄마다 가계부 거래 하나
+  for c in select * from jsonb_array_elements(coalesce(p -> 'costs', '[]'::jsonb)) loop
+    v_cost := nullif(c ->> 'id', '')::bigint;
+    v_tx   := nullif(c ->> 'transaction_id', '')::bigint;
+    v_amt  := coalesce((c ->> 'amount')::int, 0);
+    v_memo := coalesce(c ->> 'tx_memo', '');
+    continue when v_amt <= 0;
+
+    if v_tx is null then
+      insert into transactions (kind, amount, category_id, date, memo, created_by)
+      values ('expense', v_amt, v_txcat, v_date, v_memo, v_user) returning id into v_tx;
+    else
+      update transactions set amount = v_amt, category_id = v_txcat, date = v_date, memo = v_memo where id = v_tx;
+      if not found then   -- 가계부에서 지워진 거래 → 새로 만들어 다시 연결한다
+        insert into transactions (kind, amount, category_id, date, memo, created_by)
+        values ('expense', v_amt, v_txcat, v_date, v_memo, v_user) returning id into v_tx;
+      end if;
+    end if;
+
+    if v_cost is null then
+      insert into trip_costs (plan_id, category_id, amount, transaction_id, sort_order, created_by)
+      values (v_id, nullif(c ->> 'category_id', '')::bigint, v_amt, v_tx, coalesce((c ->> 'sort_order')::int, 0), v_user);
+    else
+      update trip_costs
+         set category_id = nullif(c ->> 'category_id', '')::bigint,
+             amount = v_amt, transaction_id = v_tx, sort_order = coalesce((c ->> 'sort_order')::int, 0)
+       where id = v_cost and plan_id = v_id;
+      if not found then
+        insert into trip_costs (plan_id, category_id, amount, transaction_id, sort_order, created_by)
+        values (v_id, nullif(c ->> 'category_id', '')::bigint, v_amt, v_tx, coalesce((c ->> 'sort_order')::int, 0), v_user);
+      end if;
+    end if;
+  end loop;
+
+  return v_id;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
@@ -881,4 +1022,5 @@ union all select 'visited_regions', count(*) from visited_regions
 union all select 'trips', count(*) from trips
 union all select 'trip_regions', count(*) from trip_regions
 union all select 'trip_plans', count(*) from trip_plans
+union all select 'trip_costs', count(*) from trip_costs
 union all select 'packing_items', count(*) from packing_items;

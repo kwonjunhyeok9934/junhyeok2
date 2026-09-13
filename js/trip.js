@@ -8,7 +8,7 @@ import { REGIONS } from './koreamap.js';
 import { fetchCategories, addCategory } from './categories.js';
 import {
   todayLocal, formatWon, parseWon, dayName, tripLabel, tripNights, tripStatus, sortTrips, tripsByRegion,
-  nextTripName, tripDates, groupPlansByDate, sumPlans, groupPacking,
+  nextTripName, tripDates, groupPlansByDate, sumPlans, sumCosts, groupPacking,
 } from './calc.js';
 import * as packing from './packing.js';
 
@@ -23,8 +23,10 @@ const state = {
   plans: [],          // 그 여행의 일정 줄
   plan: null,         // 시트에서 고치는 중인 일정 줄
   planDate: '',       // 시트에서 고른 날
-  planCat: null,      // 시트에서 고른 분류 (categories 의 kind='trip')
+  costs: [],          // 시트에서 고치는 중인 지출 줄 [{ id, category_id, amount, transaction_id }]
+  dropped: [],        // 시트에서 뺀 지출 줄 id
   cats: [],           // 카테고리 전체 (일정 분류 + 가계부 '여행')
+  rendered: '',       // 마지막으로 그린 내용 (같으면 다시 안 그린다 — 체크할 때 화면이 흔들리지 않게)
   packingOpen: null,  // 준비물 접기: null 이면 '여행 전에만 펼침', true/false 면 직접 접었다 편 것
 };
 
@@ -70,12 +72,9 @@ export function init({ userId, onChange: changed, onTxChange: txChanged, onShowR
     planId: $('#plan-id'),
     planDays: $('#plan-days'),
     planPlace: $('#plan-place'),
-    planAmount: $('#plan-amount'),
     planMemo: $('#plan-memo'),
-    planCats: $('#plan-cats'),
-    planNewCatRow: $('#plan-new-cat-row'),
-    planNewCat: $('#plan-new-cat'),
-    planNewCatOk: $('#plan-new-cat-ok'),
+    planCosts: $('#plan-costs'),
+    planCostAdd: $('#plan-cost-add'),
     planSave: $('#plan-save'),
     planDel: $('#plan-delete'),
   };
@@ -120,31 +119,23 @@ export function init({ userId, onChange: changed, onTxChange: txChanged, onShowR
     state.planDate = chip.dataset.date;
     renderPlanDays();
   });
-  el.planCats.addEventListener('click', (e) => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    if (chip.dataset.add !== undefined) {
-      el.planNewCatRow.hidden = false;
-      el.planNewCat.focus();
-      return;
-    }
-    const id = Number(chip.dataset.id);
-    state.planCat = state.planCat === id ? null : id;
-    renderPlanCats();
+  el.planCosts.addEventListener('input', onCostInput);
+  el.planCosts.addEventListener('change', onCostInput);
+  el.planCosts.addEventListener('click', (e) => {
+    const drop = e.target.closest('[data-drop]');
+    if (!drop) return;
+    const at = Number(drop.dataset.drop);
+    const gone = state.costs[at];
+    if (gone?.id) state.dropped.push(gone.id);
+    state.costs.splice(at, 1);
+    renderCosts();
   });
-  el.planNewCatOk.addEventListener('click', addPlanCat);
-  el.planNewCat.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addPlanCat();
-    }
+  el.planCostAdd.addEventListener('click', () => {
+    state.costs.push({ id: null, category_id: defaultCatId(), amount: 0, transaction_id: null });
+    renderCosts();
+    el.planCosts.querySelector('.cost-row:last-child .cost-amount')?.focus();
   });
   el.planPlace.addEventListener('input', validatePlan);
-  el.planAmount.addEventListener('input', () => {
-    const n = parseWon(el.planAmount.value);
-    el.planAmount.value = n ? formatWon(n) : '';
-    validatePlan();
-  });
   el.planForm.addEventListener('submit', (e) => {
     e.preventDefault();
     savePlan();
@@ -276,7 +267,7 @@ async function showDetail() {
   try {
     const [packed, plans, cats] = await Promise.all([
       sb.from('trip_packed').select('item_id').eq('trip_id', trip.id).then(unwrap),
-      sb.from('trip_plans').select('*').eq('trip_id', trip.id).order('created_at', { ascending: true }).then(unwrap),
+      sb.from('trip_plans').select('*, costs:trip_costs(*)').eq('trip_id', trip.id).order('created_at', { ascending: true }).then(unwrap),
       fetchCategories(),
     ]);
     state.packed = new Set(packed.map((r) => r.item_id));
@@ -287,7 +278,18 @@ async function showDetail() {
     toast(missingTable(err) ? '준비물·일정 표가 아직 없어요. schema.sql 31·33번을 실행해 주세요' : `불러오지 못했어요: ${err.message ?? ''}`);
   }
   el.viewTitle.textContent = trip.title;
-  renderDetail();
+  if (signature() !== state.rendered) renderDetail();
+}
+
+// 지금 화면에 그려진 내용을 한 줄로. 이게 같으면 다시 그릴 이유가 없다.
+function signature() {
+  return JSON.stringify([
+    current()?.id,
+    current()?.title,
+    [...state.packed].sort(),
+    state.plans,
+    packing.items().map((i) => [i.id, i.title, i.group_name, i.sort_order]),
+  ]);
 }
 
 function renderDetail() {
@@ -310,6 +312,7 @@ function renderDetail() {
 
     <button type="button" class="btn small wide" data-act="ledger">가계부에서 이 기간 보기</button>
     <button type="button" class="btn wide danger" data-act="remove">이 여행 삭제</button>`;
+  state.rendered = signature();
 }
 
 // 준비물: 공용 체크리스트를 그대로 가져와 체크만 한다.
@@ -374,14 +377,21 @@ function planCard(trip) {
 }
 
 function planRow(p) {
-  const cat = state.cats.find((c) => c.id === p.category_id)?.name ?? '';
+  const costs = (p.costs ?? []).slice().sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+  const name = (id) => state.cats.find((c) => c.id === id)?.name ?? '';
+  const total = sumCosts(p);
   return `
     <div class="tx-row plan-row" data-plan="${p.id}">
       <div class="tx-main">
-        <div class="tx-cat">${escapeHtml(p.place || cat || '메모')}${cat && p.place ? `<span class="tag">${escapeHtml(cat)}</span>` : ''}</div>
+        <div class="tx-cat">${escapeHtml(p.place || name(costs[0]?.category_id) || '메모')}</div>
         ${p.memo ? `<div class="tx-memo">${escapeHtml(p.memo)}</div>` : ''}
+        ${costs.length
+          ? `<div class="cost-tags">${costs
+              .map((c) => `<span class="tag">${escapeHtml(name(c.category_id) || '분류 없음')} ${formatWon(c.amount)}</span>`)
+              .join('')}</div>`
+          : ''}
       </div>
-      <div class="tx-amount">${p.amount ? formatWon(p.amount) : ''}</div>
+      <div class="tx-amount">${total ? formatWon(total) : ''}</div>
     </div>`;
 }
 
@@ -425,7 +435,7 @@ async function togglePacked(itemId) {
   const on = !state.packed.has(itemId);
   if (on) state.packed.add(itemId);
   else state.packed.delete(itemId);
-  renderDetail();
+  paintPacked();
   haptic(on ? 15 : 5);
   try {
     if (on) unwrap(await sb.from('trip_packed').insert({ trip_id: trip.id, item_id: itemId }));
@@ -434,9 +444,29 @@ async function togglePacked(itemId) {
     console.error(err);
     if (on) state.packed.delete(itemId);
     else state.packed.add(itemId);
-    renderDetail();
-    toast('변경에 실패했어요. 다시 시도해 주세요');
+    paintPacked();
+    toast(`변경에 실패했어요: ${err.message ?? ''}`);
   }
+}
+
+// 체크 표시만 고친다 — 화면을 통째로 다시 그리면 눈에 띄게 흔들린다.
+function paintPacked() {
+  const list = packing.items();
+  for (const row of el.body.querySelectorAll('[data-item]')) {
+    const on = state.packed.has(Number(row.dataset.item));
+    row.classList.toggle('done', on);
+    const check = row.querySelector('.todo-check');
+    check.textContent = on ? '✓' : '';
+    check.setAttribute('aria-label', on ? '안 챙김' : '챙김');
+  }
+  for (const head of el.body.querySelectorAll('#packing-fold .group-head')) {
+    const name = head.firstElementChild.textContent;
+    const items = list.filter((i) => (i.group_name || '기타') === name);
+    head.lastElementChild.textContent = `${items.filter((i) => state.packed.has(i.id)).length}/${items.length}`;
+  }
+  const sum = $('#packing-fold > summary .count');
+  if (sum) sum.textContent = `${list.filter((i) => state.packed.has(i.id)).length}/${list.length}`;
+  state.rendered = signature();
 }
 
 // ---- 일정 줄 시트 ------------------------------------------------------------
@@ -449,14 +479,16 @@ function openPlan(plan, date) {
 
   el.planId.value = plan?.id ?? '';
   el.planPlace.value = plan?.place ?? '';
-  el.planAmount.value = plan?.amount ? formatWon(plan.amount) : '';
   el.planMemo.value = plan?.memo ?? '';
   el.planDel.hidden = !plan;
-  state.planCat = plan?.category_id ?? null;
-  el.planNewCatRow.hidden = true;
-  el.planNewCat.value = '';
+  state.dropped = [];
+  state.costs = (plan?.costs ?? [])
+    .slice()
+    .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+    .map((c) => ({ id: c.id, category_id: c.category_id, amount: c.amount, transaction_id: c.transaction_id }));
+  if (!state.costs.length) state.costs.push({ id: null, category_id: defaultCatId(), amount: 0, transaction_id: null });
   renderPlanDays();
-  renderPlanCats();
+  renderCosts();
   validatePlan();
   openSheet(el.planSheet);
   if (!plan) setTimeout(() => el.planPlace.focus(), 250);
@@ -474,34 +506,66 @@ function renderPlanDays() {
     .join('');
 }
 
-function renderPlanCats() {
-  el.planCats.innerHTML =
-    state.cats
-      .filter((c) => c.kind === 'trip')
-      .map(
-        (c) => `<button type="button" class="chip ${c.id === state.planCat ? 'selected' : ''}" data-id="${c.id}">${escapeHtml(c.name)}</button>`,
-      )
-      .join('') + '<button type="button" class="chip add" data-add>＋ 새 분류</button>';
+// 지출 줄: 분류 + 금액. 한 장소에서 티켓도 끊고 굿즈도 살 수 있다.
+function renderCosts() {
+  const trip = state.cats.filter((c) => c.kind === 'trip');
+  el.planCosts.innerHTML = state.costs
+    .map(
+      (c, i) => `
+      <div class="cost-row" data-i="${i}">
+        <select class="cost-cat" data-i="${i}" aria-label="분류">
+          <option value="">분류 없음</option>
+          ${trip.map((t) => `<option value="${t.id}" ${t.id === c.category_id ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('')}
+          <option value="new">＋ 새 분류…</option>
+        </select>
+        <input class="cost-amount" data-i="${i}" type="text" inputmode="numeric" placeholder="0"
+               value="${c.amount ? formatWon(c.amount) : ''}" autocomplete="off">
+        ${state.costs.length > 1 ? `<button type="button" class="icon-btn del" data-drop="${i}" aria-label="이 줄 빼기">✕</button>` : ''}
+      </div>`,
+    )
+    .join('');
+  validatePlan();
 }
 
-async function addPlanCat() {
-  const name = el.planNewCat.value;
-  if (!name.trim()) return;
-  try {
-    const created = await addCategory(name, 'trip', state.cats);
-    state.cats = await fetchCategories();
-    state.planCat = created.id;
-    el.planNewCat.value = '';
-    el.planNewCatRow.hidden = true;
-    renderPlanCats();
-  } catch (err) {
-    console.error(err);
-    toast(`분류를 추가하지 못했어요: ${err.message ?? ''}`);
+function defaultCatId() {
+  return state.cats.find((c) => c.kind === 'trip')?.id ?? null;
+}
+
+async function onCostInput(e) {
+  const at = Number(e.target.dataset.i);
+  const cost = state.costs[at];
+  if (!cost) return;
+
+  if (e.target.classList.contains('cost-amount')) {
+    const n = parseWon(e.target.value);
+    e.target.value = n ? formatWon(n) : '';
+    cost.amount = n;
+    validatePlan();
+    return;
   }
+  if (!e.target.classList.contains('cost-cat')) return;
+
+  if (e.target.value === 'new') {
+    const name = window.prompt('새 분류 이름 (예: 주차비)');
+    e.target.value = String(cost.category_id ?? '');
+    if (!name || !name.trim()) return;
+    try {
+      const created = await addCategory(name, 'trip', state.cats);
+      state.cats = await fetchCategories();
+      cost.category_id = created.id;
+      renderCosts();
+    } catch (err) {
+      console.error(err);
+      toast(`분류를 추가하지 못했어요: ${err.message ?? ''}`);
+    }
+    return;
+  }
+  cost.category_id = e.target.value ? Number(e.target.value) : null;
 }
 
 function validatePlan() {
-  el.planSave.disabled = !el.planPlace.value.trim() && parseWon(el.planAmount.value) <= 0;
+  const money = state.costs.some((c) => c.amount > 0);
+  el.planSave.disabled = !el.planPlace.value.trim() && !money;
 }
 
 // 가계부에서 이 지출이 들어갈 카테고리 ('여행' 이 없으면 미분류)
@@ -513,37 +577,45 @@ async function savePlan() {
   const trip = current();
   if (!trip) return;
   const place = el.planPlace.value.trim();
-  const amount = parseWon(el.planAmount.value);
-  if (!place && amount <= 0) return;
+  const costs = state.costs.filter((c) => c.amount > 0);
+  if (!place && !costs.length) return;
+
+  // 금액을 지운 줄은 빼는 것으로 본다
+  const dropped = [...state.dropped, ...state.costs.filter((c) => c.id && c.amount <= 0).map((c) => c.id)];
+  const catName = (id) => state.cats.find((c) => c.id === id)?.name ?? '';
 
   el.planSave.disabled = true;
   try {
-    const catName = state.cats.find((c) => c.id === state.planCat)?.name ?? '';
     unwrap(
       await sb.rpc('save_trip_plan', {
         p: {
           id: state.plan?.id ?? null,
           trip_id: trip.id,
-          transaction_id: state.plan?.transaction_id ?? null,
           date: state.planDate,
           place,
           memo: el.planMemo.value.trim(),
-          amount,
-          category_id: state.planCat,                                   // 일정 줄의 분류
-          tx_category_id: amount > 0 ? travelCategoryId() : null,       // 가계부는 '여행'
-          tx_memo: [trip.title, catName, place].filter(Boolean).join(' · '),
+          tx_category_id: travelCategoryId(),                  // 가계부는 '여행' 한 덩어리
+          removed: dropped,
+          costs: costs.map((c, i) => ({
+            id: c.id,
+            category_id: c.category_id,
+            amount: c.amount,
+            transaction_id: c.transaction_id,
+            sort_order: i,
+            tx_memo: [trip.title, catName(c.category_id), place].filter(Boolean).join(' · '),
+          })),
         },
       }),
     );
     haptic();
     closeSheet(el.planSheet);
     await showDetail();
-    if (amount > 0 || state.plan?.amount) onTxChange(); // 가계부도 바뀌었다
+    onTxChange();
   } catch (err) {
     console.error(err);
     toast(
       missingTable(err)
-        ? '일정 표가 아직 없어요. schema.sql 31·33번을 실행해 주세요'
+        ? '일정 표가 아직 없어요. schema.sql 31·33·35번을 실행해 주세요'
         : `저장에 실패했어요: ${err.message ?? ''}`,
     );
   } finally {
@@ -553,12 +625,13 @@ async function savePlan() {
 
 async function removePlan() {
   if (!state.plan) return;
-  const msg = state.plan.amount
-    ? `이 줄을 지우면 가계부의 ${formatWon(state.plan.amount)}원 지출도 함께 사라져요. 지울까요?`
+  const spent = sumCosts(state.plan);
+  const msg = spent
+    ? `이 줄을 지우면 가계부의 ${formatWon(spent)}원 지출도 함께 사라져요. 지울까요?`
     : '이 줄을 지울까요?';
   if (!confirmDialog(msg)) return;
   try {
-    const had = state.plan.amount > 0;
+    const had = sumCosts(state.plan) > 0;
     unwrap(await sb.from('trip_plans').delete().eq('id', state.plan.id));
     closeSheet(el.planSheet);
     await showDetail();

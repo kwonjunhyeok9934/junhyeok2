@@ -473,19 +473,12 @@
       </div>
       <input id="plan-place" type="text" placeholder="어디를 갔나요? (예: 성산일출봉)" maxlength="60" autocomplete="off" required>
       <div>
-        <div class="field-label">분류</div>
-        <div id="plan-cats" class="chips"></div>
-        <div id="plan-new-cat-row" class="row" hidden style="margin-top:8px">
-          <input id="plan-new-cat" type="text" placeholder="새 분류 이름" maxlength="12">
-          <button type="button" id="plan-new-cat-ok" class="btn small">추가</button>
-        </div>
+        <div class="field-label">쓴 돈</div>
+        <div id="plan-costs"></div>
+        <button type="button" id="plan-cost-add" class="plan-add" style="margin-top:8px">＋ 지출 추가</button>
       </div>
-      <label class="amount-field">
-        <span class="won">₩</span>
-        <input id="plan-amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off">
-      </label>
       <input id="plan-memo" type="text" placeholder="메모 (선택)" maxlength="80">
-      <p class="hint">금액을 적으면 가계부에도 '여행' 지출로 함께 들어가요.</p>
+      <p class="hint">한 장소에 티켓·굿즈처럼 여러 번 써도 돼요. 적은 금액은 가계부에 '여행' 지출로 들어가요.</p>
       <div class="row actions">
         <button type="button" id="plan-delete" class="btn danger" hidden>삭제</button>
         <button type="submit" id="plan-save" class="btn primary grow" disabled>저장</button>

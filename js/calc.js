@@ -563,8 +563,13 @@ export function groupPlansByDate(plans, dates) {
   return map;
 }
 
+// 일정 한 줄에 붙은 지출 줄들의 합 (성산일출봉 = 티켓 5,000 + 굿즈 12,000)
+export function sumCosts(plan) {
+  return (plan?.costs ?? []).reduce((a, c) => a + (c.amount || 0), 0);
+}
+
 export function sumPlans(plans) {
-  return plans.reduce((a, p) => a + (p.amount || 0), 0);
+  return plans.reduce((a, p) => a + sumCosts(p), 0);
 }
 
 // 준비물을 대분류로 묶는다. 기본 분류를 앞에 두고, 새로 만든 분류는 그 뒤에 이름 순.
