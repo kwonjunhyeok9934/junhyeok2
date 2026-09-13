@@ -11,7 +11,7 @@
 ## 처음 설정 (한 번만)
 
 1. **Supabase 프로젝트 생성** — https://supabase.com → New project (Region: Northeast Asia / Seoul)
-2. **표 만들기** — 대시보드 SQL Editor에 `supabase/schema.sql` 전체를 붙여 실행
+2. **표 만들기** — 대시보드 SQL Editor에 `supabase/schema.sql` 전체를 붙여 실행 (여러 번 실행해도 안전하다)
 3. **자가 가입 끄기** — Authentication → Sign In / Up → *Allow new users to sign up* **OFF**
    (끄지 않으면 누구나 계정을 만들어 들어올 수 있다)
 4. **두 계정 만들기** — Authentication → Users → *Add user* → 이메일·비밀번호, *Auto Confirm User* 체크.
