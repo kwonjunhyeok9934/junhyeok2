@@ -14,5 +14,11 @@ union all select '함수 save_trip_plan',
        case when exists (select 1 from pg_proc where proname = 'save_trip_plan') then '있음' else '없음' end
 union all select '함수 save_meal',
        case when exists (select 1 from pg_proc where proname = 'save_meal') then '있음' else '없음' end
+union all select '표 pantry_items',    case when to_regclass('public.pantry_items') is null then '없음' else '있음' end
+union all select '열 pantry_items.qty',
+       case when exists (select 1 from information_schema.columns
+                          where table_name = 'pantry_items' and column_name = 'qty') then '있음' else '없음' end
+union all select '함수 pantry_left',
+       case when exists (select 1 from pg_proc where proname = 'pantry_left') then '있음' else '없음' end
 union all select '함수 notify_webhook',
        case when exists (select 1 from pg_proc where proname = 'notify_webhook') then '있음' else '없음' end;
