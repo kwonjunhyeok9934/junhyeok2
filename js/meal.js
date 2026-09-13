@@ -8,7 +8,7 @@ import {
   todayLocal, shiftDay, formatWon, parseWon, dayName,
   MEAL_SLOTS, SLOT_LABEL, weekStart, weekDays, weekLabel, slotOfHour,
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL,
-  buyTotal, buyAmount, mealAmount, sortMealBuys, buyLineText,
+  buyTotal, buyAmount, mealAmount, sortMealBuys, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
 } from './calc.js';
 import { fetchCategories, addCategory } from './categories.js';
@@ -189,33 +189,49 @@ function mealRow(m, slot, first, last, who, i) {
   const title = (m.menu || m.buys.flatMap((b) => cleanLines(b.lines).map((l) => l.name)).filter(Boolean).join(', ') || '기록').trim();
   const place = nameOf(m.place_id);
   const p = m.eater ? who.get(m.eater) : null;
+  // 각자 먹은 끼니는 행이 둘이 되므로 끼니 이름을 둘 다 보여 준다 (한쪽만 비면 이름만 뜬 것처럼 보인다).
   const whoTag = m.eater
-    ? `<span class="tag who" style="background:color-mix(in srgb, ${escapeHtml(p?.color ?? '#888')} 16%, transparent); color:${escapeHtml(p?.color ?? '#888')}">${escapeHtml(p?.name ?? '혼자')}</span>`
-    : '<span class="tag who soft">같이</span>';
+    ? `<span class="tag who" style="${tint(p?.color ?? '#888')}">${escapeHtml(p?.name ?? '혼자')}</span>`
+    : '<span class="tag who">같이</span>';
   const buys = m.buys
     .map((b) => {
-      const text = [b.shop?.trim(), buyLineText(b.lines)].filter(Boolean).join(' · ');
-      return `<div class="meal-buy"><span class="tag soft">${escapeHtml(nameOf(b.how_id) || '어떻게?')}</span>${text ? ` ${escapeHtml(text)}` : ''}</div>`;
+      const how = nameOf(b.how_id) || '어떻게?';
+      const at = catsOf('meal_how').findIndex((c) => c.id === b.how_id);
+      const shop = b.shop?.trim();
+      const items = buyItemTexts(b.lines)
+        .map((l) => `<span class="buy-item"><span class="nm">${escapeHtml(l.name)}</span><span class="pr">${escapeHtml(l.price)}</span></span>`)
+        .join('');
+      return `
+        <div class="meal-buy">
+          <span class="tag how" style="${tint(tagColor(at))}">${escapeHtml(how)}</span>
+          <span class="buy-items">${shop ? `<span class="shop">${escapeHtml(shop)}</span>` : ''}${items}</span>
+        </div>`;
     })
     .join('');
   return `
     <div class="tx-row meal-row" data-id="${m.id}" style="--i:${Math.min(i, 12)}">
       <div class="meal-slot">
-        <span class="slot-name">${first ? SLOT_LABEL[slot] ?? '' : ''}</span>
+        <span class="slot-name">${SLOT_LABEL[slot] ?? ''}</span>
         ${whoTag}
       </div>
       <div class="tx-main">
         <div class="meal-head">
           <span class="tx-cat">${escapeHtml(title)}</span>
           ${place ? `<span class="tag">${escapeHtml(place)}</span>` : ''}
+          <span class="tx-amount">${amount ? formatWon(amount) : ''}</span>
         </div>
         ${buys}
       </div>
-      <div class="tx-amount">${amount ? formatWon(amount) : ''}</div>
       ${last
         ? `<button type="button" class="icon-btn slot-add" data-date="${m.date}" data-slot="${slot}" aria-label="${SLOT_LABEL[slot]}에 하나 더">＋</button>`
         : '<span class="slot-add" aria-hidden="true"></span>'}
     </div>`;
+}
+
+// 뱃지: 그 색을 옅게 깐 배경 + 진한 글자. 라이트·다크 둘 다에서 읽힌다.
+function tint(color) {
+  const c = escapeHtml(color);
+  return `background:color-mix(in srgb, ${c} 15%, transparent); color:${c}`;
 }
 
 function emptyRow(date, slot, i) {

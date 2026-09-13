@@ -335,11 +335,17 @@ export function mealBuyMemo({ slot, menu, how, shop, lines }) {
     .slice(0, 60);
 }
 
-// 세트 한 줄의 품목 문구. '고추 1,500원, 양파 1,000원'
-export function buyLineText(lines) {
-  return cleanLines(lines)
-    .map((l) => [l.name, l.amount ? `${formatWon(l.amount)}원` : ''].filter(Boolean).join(' '))
-    .join(', ');
+// 세트의 품목을 한 줄씩. 이름과 가격을 따로 줘서 화면에서 가격 열을 맞출 수 있게 한다.
+// [{ name: '참치', price: '300원' }, { name: '고추장', price: '4,500원' }]
+export function buyItemTexts(lines) {
+  return cleanLines(lines).map((l) => ({ name: l.name, price: l.amount ? `${formatWon(l.amount)}원` : '' }));
+}
+
+// '어떻게' 뱃지 색. 목록 순서로 돌려 쓴다 —
+// 이름 해시로 하면 컬리와 마트가 같은 색으로 겹칠 수 있다(실제로 겹쳤다).
+const TAG_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+export function tagColor(index) {
+  return TAG_COLORS[((index % TAG_COLORS.length) + TAG_COLORS.length) % TAG_COLORS.length];
 }
 
 // { total, count(끼니 수), paid(돈 쓴 끼니), free(돈 안 쓴 끼니), buys(세트 수) }

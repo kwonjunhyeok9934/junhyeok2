@@ -7,7 +7,7 @@ import {
   calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
   dayName, dayLabel, weekStart, weekDays, weekLabel, slotOfHour, resolveMealCategoryId,
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee,
-  buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyLineText,
+  buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
   nextTripName, tripDates, groupPlansByDate, sumPlans,
@@ -298,14 +298,21 @@ test('mealBuyMemo: 가게 이름이 있으면 품목 대신 그걸 쓴다', () =
   );
 });
 
-test('buyLineText: 품목과 가격을 이어 붙인다', () => {
-  assert.equal(
-    buyLineText([{ name: '고추', amount: 1500 }, { name: '양파', amount: 1000 }]),
-    '고추 1,500원, 양파 1,000원',
+test('buyItemTexts: 품목마다 이름과 가격을 따로', () => {
+  assert.deepEqual(
+    buyItemTexts([{ name: '참치', amount: 300 }, { name: '고추장', amount: 4500 }]),
+    [{ name: '참치', price: '300원' }, { name: '고추장', price: '4,500원' }],
   );
-  assert.equal(buyLineText([{ name: '얻어온 파', amount: 0 }]), '얻어온 파'); // 가격이 없으면 이름만
-  assert.equal(buyLineText([{ name: '', amount: 5000 }]), '5,000원');        // 이름이 없으면 가격만
-  assert.equal(buyLineText([]), '');
+  assert.deepEqual(buyItemTexts([{ name: '얻어온 파', amount: 0 }]), [{ name: '얻어온 파', price: '' }]);
+  assert.deepEqual(buyItemTexts([{ name: '', amount: 5000 }]), [{ name: '', price: '5,000원' }]);
+  assert.deepEqual(buyItemTexts([]), []);
+});
+
+test('tagColor: 앞 8개는 서로 다른 색, 그 뒤로는 돌려 쓴다', () => {
+  const eight = [0, 1, 2, 3, 4, 5, 6, 7].map(tagColor);
+  assert.equal(new Set(eight).size, 8);
+  assert.equal(tagColor(8), tagColor(0));
+  assert.equal(tagColor(-1), tagColor(7)); // 목록에 없는 카테고리(-1)도 색이 나온다
 });
 
 const meals = [
