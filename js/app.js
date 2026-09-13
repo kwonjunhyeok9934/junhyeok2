@@ -216,7 +216,7 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_packed' }, () => trip.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'packing_items' }, () => packing.refresh())
     .subscribe();
-  // 사 둔 것도 나중에 생겼다 (schema.sql 37번). 같은 이유로 따로 둔다.
+  // 사 둔 것도 나중에 생겼다 (schema.sql 38번). 같은 이유로 따로 둔다.
   const pantryCh = sb
     .channel('pantry-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items' }, () => pantry.refresh())

@@ -8,7 +8,7 @@ import { REGIONS } from './koreamap.js';
 import { fetchCategories, addCategory } from './categories.js';
 import {
   todayLocal, formatWon, parseWon, dayName, tripLabel, tripNights, tripStatus, sortTrips, tripsByRegion,
-  nextTripName, tripDates, groupPlansByDate, sumPlans, sumCosts, groupPacking,
+  nextTripName, tripDates, groupPlansByDate, splitPrep, sumPlans, sumCosts, groupPacking,
 } from './calc.js';
 import * as packing from './packing.js';
 
@@ -23,6 +23,7 @@ const state = {
   plans: [],          // 그 여행의 일정 줄
   plan: null,         // 시트에서 고치는 중인 일정 줄
   planDate: '',       // 시트에서 고른 날
+  planPrep: false,    // '여행 준비' 칸에 넣는 줄인지 (항공권·숙소처럼 미리 결제한 것)
   costs: [],          // 시트에서 고치는 중인 지출 줄 [{ id, category_id, amount, transaction_id }]
   dropped: [],        // 시트에서 뺀 지출 줄 id
   cats: [],           // 카테고리 전체 (일정 분류 + 가계부 '여행')
@@ -71,6 +72,8 @@ export function init({ userId, onChange: changed, onTxChange: txChanged, onShowR
     planForm: $('#plan-form'),
     planId: $('#plan-id'),
     planDays: $('#plan-days'),
+    planWhen: $('#plan-when'),
+    planDateInput: $('#plan-date'),
     planPlace: $('#plan-place'),
     planMemo: $('#plan-memo'),
     planCosts: $('#plan-costs'),
@@ -114,10 +117,19 @@ export function init({ userId, onChange: changed, onTxChange: txChanged, onShowR
 
   // 일정 시트
   el.planDays.addEventListener('click', (e) => {
-    const chip = e.target.closest('[data-date]');
+    const chip = e.target.closest('.chip');
     if (!chip) return;
-    state.planDate = chip.dataset.date;
+    if (chip.dataset.prep !== undefined) {
+      state.planPrep = true;
+      state.planDate = prepDefaultDate();
+    } else {
+      state.planPrep = false;
+      state.planDate = chip.dataset.date;
+    }
     renderPlanDays();
+  });
+  el.planDateInput.addEventListener('change', () => {
+    if (el.planDateInput.value) state.planDate = el.planDateInput.value;
   });
   el.planCosts.addEventListener('input', onCostInput);
   el.planCosts.addEventListener('change', onCostInput);
@@ -156,10 +168,17 @@ function unwrap({ data, error }) {
   return data;
 }
 
-// 아직 SQL 을 실행하지 않아 표가 없는 상태인지.
+// 아직 SQL 을 다 실행하지 않아 표나 열이 없는 상태인지 (열까지 봐야 한다 — 표만 있고 열이 빠진 경우가 있다).
 function missingTable(err) {
   const m = `${err?.message ?? ''} ${err?.code ?? ''}`;
-  return /does not exist|could not find the (table|function)|42P01|PGRST20[25]/i.test(m);
+  return /does not exist|could not find the (table|function|column)|42P01|42703|PGRST20[0-9]/i.test(m);
+}
+
+const NEED_SQL = 'Supabase SQL Editor 에서 schema.sql 전체를 한 번 실행해 주세요';
+
+// 무엇이 잘못됐는지 알아야 고친다 — 서버가 한 말과 코드를 그대로 보여 준다.
+function errText(err) {
+  return [err?.message, err?.code ? `(${err.code})` : ''].filter(Boolean).join(' ') || '다시 시도해 주세요';
 }
 
 function current() {
@@ -267,7 +286,13 @@ async function showDetail() {
   try {
     const [packed, plans, cats] = await Promise.all([
       sb.from('trip_packed').select('item_id').eq('trip_id', trip.id).then(unwrap),
-      sb.from('trip_plans').select('*, costs:trip_costs(*)').eq('trip_id', trip.id).order('created_at', { ascending: true }).then(unwrap),
+      sb
+        .from('trip_plans')
+        // '*' 로 받으면 열이 없어도 조용히 넘어간다. 이름을 적어 두면 SQL 을 덜 실행한 걸 여기서 알아챈다.
+        .select('id,trip_id,date,place,memo,prep,created_at, costs:trip_costs(*)')
+        .eq('trip_id', trip.id)
+        .order('created_at', { ascending: true })
+        .then(unwrap),
       fetchCategories(),
     ]);
     state.packed = new Set(packed.map((r) => r.item_id));
@@ -275,7 +300,7 @@ async function showDetail() {
     state.cats = cats;
   } catch (err) {
     console.error(err);
-    toast(missingTable(err) ? '준비물·일정 표가 아직 없어요. schema.sql 전체를 한 번 실행해 주세요' : `불러오지 못했어요: ${err.message ?? ''}`);
+    toast(missingTable(err) ? NEED_SQL : `불러오지 못했어요: ${errText(err)}`);
   }
   el.viewTitle.textContent = trip.title;
   if (signature() !== state.rendered) renderDetail();
@@ -346,11 +371,24 @@ function packingCard(st) {
 }
 
 // 일정: 2박 3일이면 세 칸. 칸마다 어디를 갔고 얼마를 썼는지 줄을 더한다.
+// 맨 위는 '여행 준비' — 항공권·숙소처럼 떠나기 전에 결제한 것.
 function planCard(trip) {
   const dates = tripDates(trip.start_date, trip.end_date);
-  const byDate = groupPlansByDate(state.plans, dates);
+  const { prep, rest } = splitPrep(state.plans);
+  const byDate = groupPlansByDate(rest, dates);
   const total = sumPlans(state.plans);
   const today = todayLocal();
+
+  const prepSum = sumPlans(prep);
+  const prepBox = `
+    <div class="plan-day prep">
+      <div class="day-head">
+        <span>여행 준비<small> 미리 결제</small></span>
+        <span class="sub">${prepSum ? formatWon(prepSum) : ''}</span>
+      </div>
+      ${prep.map((p) => planRow(p, true)).join('')}
+      <button type="button" class="plan-add" data-add="prep">＋ 항공권·숙소 같은 것</button>
+    </div>`;
 
   const days = dates
     .map((date, i) => {
@@ -372,18 +410,20 @@ function planCard(trip) {
   return `
     <section class="card plans">
       <h2>일정 ${total ? `<span class="count">${formatWon(total)}원</span>` : ''}</h2>
+      ${prepBox}
       ${days}
     </section>`;
 }
 
-function planRow(p) {
+function planRow(p, showDate = false) {
   const costs = (p.costs ?? []).slice().sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
   const name = (id) => state.cats.find((c) => c.id === id)?.name ?? '';
   const total = sumCosts(p);
+  const when = showDate && p.date ? `<span class="when">${Number(p.date.slice(5, 7))}/${Number(p.date.slice(8, 10))} 결제</span> ` : '';
   return `
     <div class="tx-row plan-row" data-plan="${p.id}">
       <div class="tx-main">
-        <div class="tx-cat">${escapeHtml(p.place || name(costs[0]?.category_id) || '메모')}</div>
+        <div class="tx-cat">${when}${escapeHtml(p.place || name(costs[0]?.category_id) || '메모')}</div>
         ${p.memo ? `<div class="tx-memo">${escapeHtml(p.memo)}</div>` : ''}
         ${costs.length
           ? `<div class="cost-tags">${costs
@@ -475,7 +515,8 @@ function openPlan(plan, date) {
   const trip = current();
   if (!trip) return;
   state.plan = plan ?? null;
-  state.planDate = plan?.date ?? date ?? trip.start_date;
+  state.planPrep = plan ? !!plan.prep : date === 'prep';
+  state.planDate = plan?.date ?? (state.planPrep ? prepDefaultDate() : (date ?? trip.start_date));
 
   el.planId.value = plan?.id ?? '';
   el.planPlace.value = plan?.place ?? '';
@@ -498,12 +539,25 @@ function renderPlanDays() {
   const trip = current();
   if (!trip) return;
   const dates = tripDates(trip.start_date, trip.end_date);
-  el.planDays.innerHTML = dates
-    .map(
-      (date, i) =>
-        `<button type="button" class="chip ${date === state.planDate ? 'selected' : ''}" data-date="${date}">${i + 1}일째<small> ${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}</small></button>`,
-    )
-    .join('');
+  el.planDays.innerHTML =
+    `<button type="button" class="chip ${state.planPrep ? 'selected' : ''}" data-prep>여행 준비</button>` +
+    dates
+      .map(
+        (date, i) =>
+          `<button type="button" class="chip ${!state.planPrep && date === state.planDate ? 'selected' : ''}" data-date="${date}">${i + 1}일째<small> ${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}</small></button>`,
+      )
+      .join('');
+  // 준비물은 언제 결제했는지가 날짜다 (기간 밖일 수 있다) — 그때만 날짜 칸을 연다.
+  el.planWhen.hidden = !state.planPrep;
+  el.planDateInput.value = state.planDate;
+  el.planPlace.placeholder = state.planPrep ? '무엇을 결제했나요? (예: 대한항공 왕복)' : '어디를 갔나요? (예: 성산일출봉)';
+}
+
+// 미리 결제한 날의 기본값: 대개 오늘이다. 이미 떠난 뒤라면 떠난 날로 둔다.
+function prepDefaultDate() {
+  const trip = current();
+  const today = todayLocal();
+  return !trip || today < trip.start_date ? today : trip.start_date;
 }
 
 // 지출 줄: 분류 + 금액. 한 장소에서 티켓도 끊고 굿즈도 살 수 있다.
@@ -592,6 +646,7 @@ async function savePlan() {
           id: state.plan?.id ?? null,
           trip_id: trip.id,
           date: state.planDate,
+          prep: state.planPrep,
           place,
           memo: el.planMemo.value.trim(),
           tx_category_id: travelCategoryId(),                  // 가계부는 '여행' 한 덩어리
@@ -613,11 +668,7 @@ async function savePlan() {
     onTxChange();
   } catch (err) {
     console.error(err);
-    toast(
-      missingTable(err)
-        ? '일정 표가 아직 없어요. schema.sql 전체를 한 번 실행해 주세요'
-        : `저장에 실패했어요: ${err.message ?? ''}`,
-    );
+    toast(missingTable(err) ? NEED_SQL : `저장에 실패했어요: ${errText(err)}`);
   } finally {
     el.planSave.disabled = false;
   }

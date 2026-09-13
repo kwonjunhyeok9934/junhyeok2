@@ -519,6 +519,10 @@
         <div class="field-label">며칠째</div>
         <div id="plan-days" class="chips"></div>
       </div>
+      <div id="plan-when" hidden>
+        <div class="field-label">결제한 날</div>
+        <input id="plan-date" type="date">
+      </div>
       <input id="plan-place" type="text" placeholder="어디를 갔나요? (예: 성산일출봉)" maxlength="60" autocomplete="off" required>
       <div>
         <div class="field-label">쓴 돈</div>
@@ -526,7 +530,7 @@
         <button type="button" id="plan-cost-add" class="plan-add" style="margin-top:8px">＋ 지출 추가</button>
       </div>
       <input id="plan-memo" type="text" placeholder="메모 (선택)" maxlength="80">
-      <p class="hint">한 장소에 티켓·굿즈처럼 여러 번 써도 돼요. 적은 금액은 가계부에 '여행' 지출로 들어가요.</p>
+      <p class="hint">한 장소에 티켓·굿즈처럼 여러 번 써도 돼요. 적은 금액은 가계부에 '여행' 지출로 들어가요.<br>항공권·숙소처럼 미리 결제한 것은 <b>여행 준비</b> 를 고르면 돼요.</p>
       <div class="row actions">
         <button type="button" id="plan-delete" class="btn danger" hidden>삭제</button>
         <button type="submit" id="plan-save" class="btn primary grow" disabled>저장</button>
