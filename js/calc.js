@@ -552,6 +552,20 @@ export function tripDates(start, end) {
   return out;
 }
 
+// 여행 준비 / 일차. 항공권·숙소는 떠나기 전에 결제하니 날짜가 기간 밖이다 —
+// 그냥 묶으면 1일째로 끌려 들어가 날짜가 거짓말이 된다. 그래서 따로 뺀다 (결제일 순).
+export function splitPrep(plans) {
+  const prep = plans
+    .filter((p) => p.prep)
+    .sort(
+      (a, b) =>
+        String(a.date).localeCompare(String(b.date)) ||
+        String(a.created_at).localeCompare(String(b.created_at)) ||
+        a.id - b.id,
+    );
+  return { prep, rest: plans.filter((p) => !p.prep) };
+}
+
 // 일차별로 묶는다. 날짜가 기간 밖이면 첫날에 붙여 둔다 (기간을 줄였을 때 사라지지 않게).
 export function groupPlansByDate(plans, dates) {
   const map = new Map(dates.map((d) => [d, []]));

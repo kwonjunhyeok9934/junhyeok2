@@ -593,6 +593,13 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .plan-add:active { transform: scale(.98); background: var(--accent-soft); }
 #plan-days .chip small { color: inherit; opacity: .65; }
 
+/* 여행 준비 — 떠나기 전에 결제한 것 (항공권·숙소). 일차 칸과 구분되게 살짝 눕혀 둔다. */
+.plan-day.prep { background: var(--bg); border: 0; border-radius: 14px; padding: 10px 12px; margin-bottom: 14px; }
+.plan-day.prep .day-head { padding-top: 0; }
+.plan-day.prep .day-head small { color: var(--muted); font-weight: 500; margin-left: 6px; }
+.plan-day.prep .plan-row { background: var(--card); }
+.plan-row .when { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+
 /* 접었다 펴는 카드 (여행 상세의 준비물) */
 .fold { padding: 14px 16px; }
 .fold > summary {

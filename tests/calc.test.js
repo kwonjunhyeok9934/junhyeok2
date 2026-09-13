@@ -10,7 +10,7 @@ import {
   buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
-  nextTripName, tripDates, groupPlansByDate, sumPlans, sumCosts, groupPacking,
+  nextTripName, tripDates, groupPlansByDate, splitPrep, sumPlans, sumCosts, groupPacking,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -674,6 +674,21 @@ test('groupPlansByDate: 일차별로 묶고 적은 순서대로', () => {
   assert.deepEqual(map.get('2026-09-13').map((p) => p.id), [4, 2, 3]); // 기간 밖은 첫날로
   assert.deepEqual(map.get('2026-09-14').map((p) => p.id), [1]);
   assert.deepEqual(map.get('2026-09-15'), []);
+});
+
+test('splitPrep: 미리 결제한 것은 일차에서 빼 둔다', () => {
+  const list = [
+    { id: 5, date: '2026-08-20', prep: true, place: '항공권', created_at: '2026-08-20T00:00:00Z' },
+    ...plans,
+    { id: 6, date: '2026-07-01', prep: true, place: '숙소', created_at: '2026-07-01T00:00:00Z' },
+  ];
+  const { prep, rest } = splitPrep(list);
+  assert.deepEqual(prep.map((p) => p.id), [6, 5]);            // 결제일 순
+  assert.deepEqual(rest.map((p) => p.id), [1, 2, 3, 4]);      // 나머지는 그대로
+  // 준비를 빼고 묶어야 기간 밖 날짜가 1일째로 끌려 들어가지 않는다
+  const map = groupPlansByDate(rest, tripDates('2026-09-13', '2026-09-15'));
+  assert.deepEqual(map.get('2026-09-13').map((p) => p.id), [4, 2, 3]);
+  assert.deepEqual(splitPrep([]), { prep: [], rest: [] });
 });
 
 test('sumCosts: 한 장소에 붙은 지출 줄들', () => {

@@ -1006,6 +1006,86 @@ begin
   return v_id;
 end $$;
 
+-- 37. 여행 준비 (미리 결제한 것) ------------------------------------------------------
+-- 항공권·숙소는 떠나기 전에 결제한다. 1일차 아래에 넣으면 날짜가 거짓말이 되므로
+-- '여행 준비' 칸을 따로 둔다. 날짜(date)는 결제한 날이고, 가계부에도 그 날짜로 들어간다.
+
+alter table trip_plans add column if not exists prep boolean not null default false;
+
+-- 일정 한 줄 저장 (35번과 같고, '여행 준비' 표시만 더 받는다).
+--   prep = true 면 1일째·2일째 밑이 아니라 '여행 준비' 칸에 들어간다. date 는 결제한 날.
+create or replace function save_trip_plan(p jsonb) returns bigint
+language plpgsql as $$
+declare
+  v_id    bigint := nullif(p ->> 'id', '')::bigint;
+  v_user  uuid   := auth.uid();
+  v_date  date   := (p ->> 'date')::date;
+  v_prep  boolean := coalesce((p ->> 'prep')::boolean, false);
+  v_txcat bigint := nullif(p ->> 'tx_category_id', '')::bigint;
+  c       jsonb;
+  v_cost  bigint;
+  v_tx    bigint;
+  v_amt   int;
+  v_memo  text;
+begin
+  -- 1) 장소
+  if v_id is null then
+    insert into trip_plans (trip_id, date, place, memo, prep, created_by)
+    values ((p ->> 'trip_id')::bigint, v_date, coalesce(p ->> 'place', ''), coalesce(p ->> 'memo', ''), v_prep, v_user)
+    returning id into v_id;
+  else
+    update trip_plans set date = v_date, place = coalesce(p ->> 'place', ''),
+                          memo = coalesce(p ->> 'memo', ''), prep = v_prep
+    where id = v_id;
+    if not found then   -- 상대가 지운 줄 → 새로 만든다
+      insert into trip_plans (trip_id, date, place, memo, prep, created_by)
+      values ((p ->> 'trip_id')::bigint, v_date, coalesce(p ->> 'place', ''), coalesce(p ->> 'memo', ''), v_prep, v_user)
+      returning id into v_id;
+    end if;
+  end if;
+
+  -- 2) 화면에서 뺀 지출 줄만 지운다 (트리거가 그 거래까지 지운다)
+  delete from trip_costs
+  where plan_id = v_id
+    and id in (select value::bigint from jsonb_array_elements_text(coalesce(p -> 'removed', '[]'::jsonb)));
+
+  -- 3) 지출 줄마다 가계부 거래 하나
+  for c in select * from jsonb_array_elements(coalesce(p -> 'costs', '[]'::jsonb)) loop
+    v_cost := nullif(c ->> 'id', '')::bigint;
+    v_tx   := nullif(c ->> 'transaction_id', '')::bigint;
+    v_amt  := coalesce((c ->> 'amount')::int, 0);
+    v_memo := coalesce(c ->> 'tx_memo', '');
+    continue when v_amt <= 0;
+
+    if v_tx is null then
+      insert into transactions (kind, amount, category_id, date, memo, created_by)
+      values ('expense', v_amt, v_txcat, v_date, v_memo, v_user) returning id into v_tx;
+    else
+      update transactions set amount = v_amt, category_id = v_txcat, date = v_date, memo = v_memo where id = v_tx;
+      if not found then   -- 가계부에서 지워진 거래 → 새로 만들어 다시 연결한다
+        insert into transactions (kind, amount, category_id, date, memo, created_by)
+        values ('expense', v_amt, v_txcat, v_date, v_memo, v_user) returning id into v_tx;
+      end if;
+    end if;
+
+    if v_cost is null then
+      insert into trip_costs (plan_id, category_id, amount, transaction_id, sort_order, created_by)
+      values (v_id, nullif(c ->> 'category_id', '')::bigint, v_amt, v_tx, coalesce((c ->> 'sort_order')::int, 0), v_user);
+    else
+      update trip_costs
+         set category_id = nullif(c ->> 'category_id', '')::bigint,
+             amount = v_amt, transaction_id = v_tx, sort_order = coalesce((c ->> 'sort_order')::int, 0)
+       where id = v_cost and plan_id = v_id;
+      if not found then
+        insert into trip_costs (plan_id, category_id, amount, transaction_id, sort_order, created_by)
+        values (v_id, nullif(c ->> 'category_id', '')::bigint, v_amt, v_tx, coalesce((c ->> 'sort_order')::int, 0), v_user);
+      end if;
+    end if;
+  end loop;
+
+  return v_id;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
