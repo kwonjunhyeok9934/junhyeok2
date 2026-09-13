@@ -13,7 +13,7 @@ import {
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL,
   buyTotal, buyAmount, mealAmount, sortMealBuys, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
-  pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds,
+  pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, pantryUsedLabel, pantryNextUsed,
 } from './calc.js';
 import { fetchCategories, addCategory } from './categories.js';
 import * as pantry from './pantry.js';
@@ -206,7 +206,7 @@ function mealRow(m, slot, first, last, who, i) {
       const how = nameOf(b.how_id) || '어떻게?';
       const at = catsOf('meal_how').findIndex((c) => c.id === b.how_id);
       const shop = b.shop?.trim();
-      const items = buyItemTexts(b.lines)
+      const items = buyItemTexts(b.lines, qtyOfPantry)
         .map((l) => `<span class="buy-item"><span class="nm">${escapeHtml(l.name)}</span><span class="pr">${escapeHtml(l.price)}</span></span>`)
         .join('');
       return `
@@ -435,16 +435,21 @@ function pantrySelectHtml(s) {
 // 세트의 품목 줄. 사 둔 것에서 꺼낸 줄만 모양이 다르고 나머지는 공용 편집기가 그린다.
 const setRowHtml = (line, opts) => (line.pantry_id ? pantryItemRowHtml(line) : itemRowHtml(line, opts));
 
-// 사 둔 것에서 꺼낸 줄. 이름·가격은 그 품목의 것이라 여기서 못 고치고, 다 썼는지만 누른다.
+// 그 품목을 몇 개 샀는지 (사 둔 것 목록이 원본).
+const qtyOfPantry = (id) => Math.max(1, Number(pantry.items().find((p) => p.id === id)?.qty) || 1);
+
+// 사 둔 것에서 꺼낸 줄. 이름·가격은 그 품목의 것이라 여기서 못 고치고, 몇 개 끝냈는지만 누른다.
+// 한 개짜리면 예전 그대로 남김 ↔ 다 씀 이고, 여러 개면 남김 → 1개 → 2개 → 다 씀 으로 돈다.
 // 값은 칸이 아니라 꼬리표(data-*)에 둔다 — 읽기 전용 칸을 흉내 내는 것보다 읽기가 쉽다.
 function pantryItemRowHtml(line) {
-  const done = line.done === true;
+  const qty = qtyOfPantry(line.pantry_id);
+  const used = Math.max(0, Number(line.used) || 0);
   return `
-    <div class="row pantry-line" data-pantry="${line.pantry_id}" data-done="${done ? 1 : 0}"
+    <div class="row pantry-line" data-pantry="${line.pantry_id}" data-used="${used}"
          data-name="${escapeHtml(line.name ?? '')}" data-amount="${Number(line.amount) || 0}">
       <span class="nm">${escapeHtml(line.name ?? '')}</span>
       <span class="pr">${line.amount ? `${formatWon(line.amount)}원` : '이미 냄'}</span>
-      <button type="button" class="chip mini${done ? ' selected' : ''}" data-act="toggle-done">${done ? '다 씀' : '남김'}</button>
+      <button type="button" class="chip mini${used ? ' selected' : ''}" data-act="toggle-done">${escapeHtml(pantryUsedLabel(used, qty))}</button>
       <button type="button" class="icon-btn" data-act="del-item" aria-label="이 품목 빼기">✕</button>
     </div>`;
 }
@@ -480,7 +485,7 @@ function readItemRow(row) {
     name: row.dataset.name,
     amount: Number(row.dataset.amount) || 0,
     pantry_id: Number(row.dataset.pantry),
-    done: row.dataset.done === '1',
+    used: Math.max(0, Number(row.dataset.used) || 0),
   };
 }
 
@@ -516,7 +521,8 @@ function onSetsClick(e) {
     commitOpenSet();
     const rows = [...e.target.closest('.set-items').children];
     const i = rows.indexOf(e.target.closest('.row'));
-    s.lines[i] = { ...s.lines[i], done: !s.lines[i].done };
+    const line = s.lines[i];
+    s.lines[i] = { ...line, used: pantryNextUsed(line.used, qtyOfPantry(line.pantry_id)) };
     haptic();
     renderSets();
     return;

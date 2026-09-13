@@ -7,11 +7,14 @@ export const ITEM_PLACEHOLDER = '품목 (선택)';
 
 // fixed = 배달료처럼 이름이 고정된 줄. 이름 칸은 읽기 전용이고 지울 수 없다.
 // stacked = 이름을 한 줄 통째로 쓰고 가격을 그 아래로 (긴 품목 이름을 끝까지 보여 줘야 할 때).
-export function itemRowHtml(line, { last = false, fixed = false, stacked = false, placeholder = ITEM_PLACEHOLDER } = {}) {
+// qty = 개수 칸을 같이 둔다 (사 둔 것 담기 — 같은 걸 세 개 사면 한 줄에 3개로 적는다).
+export function itemRowHtml(line, { last = false, fixed = false, stacked = false, qty = false, placeholder = ITEM_PLACEHOLDER } = {}) {
   return `
     <div class="row${stacked ? ' stacked' : ''}">
       <input type="text" data-role="name" placeholder="${escapeHtml(placeholder)}" maxlength="40" autocomplete="off"
              enterkeyhint="next" value="${escapeHtml(line.name ?? '')}"${fixed ? ' readonly' : ''}>
+      ${qty ? `<input type="text" data-role="qty" class="qty" inputmode="numeric" placeholder="1개" autocomplete="off"
+             aria-label="개수" value="${line.qty > 1 ? `${line.qty}개` : ''}">` : ''}
       <input type="text" data-role="price" class="price" inputmode="numeric" placeholder="0" autocomplete="off"
              enterkeyhint="next" value="${line.amount ? formatWon(line.amount) : ''}">
       <button type="button" class="icon-btn" data-act="del-item" aria-label="이 품목 지우기"${last || fixed ? ' style="visibility:hidden"' : ''}>✕</button>
@@ -24,6 +27,7 @@ export const isFreeRow = (row) => !!row.querySelector('[data-role="name"]:not([r
 export const readFreeRow = (row) => ({
   name: row.querySelector('[data-role="name"]').value,
   amount: parseWon(row.querySelector('[data-role="price"]').value),
+  qty: Math.max(1, parseWon(row.querySelector('[data-role="qty"]')?.value ?? '') || 1),
 });
 
 // 가격을 숫자로 다듬고, 마지막 빈 줄에 뭔가 적히면 그 아래 빈 줄을 하나 더 붙인다.
@@ -37,7 +41,8 @@ export function growItemRows(input, placeholder) {
   const lastFree = [...(box?.children ?? [])].filter(isFreeRow).at(-1);
   if (box && input.closest('.row') === lastFree && (input.value.trim() || parseWon(input.value))) {
     const stacked = lastFree.classList.contains('stacked');
-    lastFree.insertAdjacentHTML('afterend', itemRowHtml({ name: '', amount: 0 }, { last: true, stacked, placeholder }));
+    const qty = !!lastFree.querySelector('[data-role="qty"]');
+    lastFree.insertAdjacentHTML('afterend', itemRowHtml({ name: '', amount: 0 }, { last: true, stacked, qty, placeholder }));
     lastFree.querySelector('[data-act="del-item"]').style.visibility = '';
   }
 }

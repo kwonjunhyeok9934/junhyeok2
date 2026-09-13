@@ -275,7 +275,7 @@ export function slotOfHour(h) {
 }
 
 // 품목 줄 정리: 이름·가격이 둘 다 빈 줄은 버리고 금액은 0 이상 정수로.
-// 사 둔 것에서 꺼낸 줄만 pantry_id·done 을 더 달고 다닌다 (직접 적은 줄은 예전 그대로 두 칸).
+// 사 둔 것에서 꺼낸 줄만 pantry_id·used 를 더 달고 다닌다 (직접 적은 줄은 예전 그대로 두 칸).
 export function cleanLines(lines) {
   return (lines ?? [])
     .map((l) => {
@@ -286,7 +286,10 @@ export function cleanLines(lines) {
       const id = Math.trunc(Number(l?.pantry_id) || 0);
       if (id > 0) {
         out.pantry_id = id;
-        out.done = l?.done === true;
+        // 이 끼니에서 몇 개를 끝냈나. 예전 줄은 done 만 있었다 — '다 씀' 은 한 개 쓴 것으로 읽는다.
+        out.used = l?.used === undefined
+          ? (l?.done === true ? 1 : 0)
+          : Math.max(0, Math.trunc(Number(l.used) || 0));
       }
       return out;
     })
@@ -346,12 +349,17 @@ export function mealBuyMemo({ slot, menu, how, shop, lines }) {
 
 // 세트의 품목을 한 줄씩. 이름과 가격을 따로 줘서 화면에서 가격 열을 맞출 수 있게 한다.
 // [{ name: '참치', price: '300원' }, { name: '고추장', price: '4,500원' }]
-// 값이 안 실린 사 둔 것 줄은 가격 자리에 '남김'/'다 씀' 이 들어간다 —
+// 값이 안 실린 사 둔 것 줄은 가격 자리에 '남김'/'2개'/'다 씀' 이 들어간다 —
 // 열을 하나 더 두면 모든 줄에서 폭을 뺏어 품목 이름이 잘린다.
-export function buyItemTexts(lines) {
+// qtyOf(pantry_id) 로 그 품목을 몇 개 샀는지 알려 주면 '다 씀' 까지 가려 준다.
+export function buyItemTexts(lines, qtyOf = () => 1) {
   return cleanLines(lines).map((l) => ({
     name: l.name,
-    price: l.amount ? `${formatWon(l.amount)}원` : l.pantry_id ? (l.done ? '다 씀' : '남김') : '',
+    price: l.amount
+      ? `${formatWon(l.amount)}원`
+      : l.pantry_id
+        ? pantryUsedLabel(l.used, qtyOf(l.pantry_id))
+        : '',
   }));
 }
 
@@ -493,14 +501,30 @@ export function pantryPrice(item, buyId = null) {
   return holder !== null && holder !== buyId ? 0 : price;
 }
 
-// 사 둔 것 하나를 세트의 품목 줄로.
+// 사 둔 것 하나를 세트의 품목 줄로. 처음에는 '남김'(0개 끝냄)으로 붙는다.
 export function pantryLine(item, buyId = null) {
   return {
     name: String(item?.name ?? '').trim(),
     amount: pantryPrice(item, buyId),
     pantry_id: item?.id,
-    done: false,
+    used: 0,
   };
+}
+
+// 이 끼니에서 몇 개를 끝냈는지 보여 주는 말. 한 개짜리면 예전 그대로 남김/다 씀 이다.
+export function pantryUsedLabel(used, qty = 1) {
+  const n = Math.max(0, Math.trunc(Number(used) || 0));
+  const total = Math.max(1, Math.trunc(Number(qty) || 1));
+  if (n <= 0) return '남김';
+  if (n >= total) return '다 씀';
+  return `${n}개`;
+}
+
+// 버튼을 누를 때 다음 개수. 0 → 1 → … → qty → 0 으로 돈다.
+export function pantryNextUsed(used, qty = 1) {
+  const total = Math.max(1, Math.trunc(Number(qty) || 1));
+  const n = Math.max(0, Math.trunc(Number(used) || 0));
+  return n >= total ? 0 : n + 1;
 }
 
 // 드롭다운에 올릴 것: 그 카테고리에서 아직 안 끝난 품목 중 이 끼니가 아직 안 쓴 것. 최근에 산 것부터.
@@ -512,10 +536,19 @@ export function pantryChoices(items, { howId = null, usedIds = [], buyId = null 
     .sort((a, b) => (a.bought_on < b.bought_on ? 1 : a.bought_on > b.bought_on ? -1 : (b.id ?? 0) - (a.id ?? 0)));
 }
 
-// '삼겹살 600g · 12,000원' / 이미 값을 낸 것은 '삼겹살 600g · 이미 냄'
+// '삼겹살 600g · 12,000원' / 이미 값을 낸 것은 '· 이미 냄' / 여러 개면 '· 2개 남음' 까지
 export function pantryOptionLabel(item, buyId = null) {
   const price = pantryPrice(item, buyId);
-  return `${String(item?.name ?? '').trim()} · ${price ? `${formatWon(price)}원` : '이미 냄'}`;
+  const left = pantryLeftOf(item);
+  const tail = Math.max(1, Math.trunc(Number(item?.qty) || 1)) > 1 ? ` · ${left}개 남음` : '';
+  return `${String(item?.name ?? '').trim()} · ${price ? `${formatWon(price)}원` : '이미 냄'}${tail}`;
+}
+
+// 남은 개수. 예전에 담은 것(left_qty 가 없는 것)은 다 씀이면 0, 아니면 qty.
+export function pantryLeftOf(item) {
+  const qty = Math.max(1, Math.trunc(Number(item?.qty) || 1));
+  if (item?.left_qty == null) return item?.done ? 0 : qty;
+  return Math.max(0, Math.min(qty, Math.trunc(Number(item.left_qty) || 0)));
 }
 
 // 지금 고치고 있는 끼니가 이미 쓰고 있는 품목들 (한 끼니에서 같은 걸 두 번 고르지 못하게).
@@ -551,9 +584,10 @@ export function groupPantryByHow(items, cats) {
   return [...groups.values()].sort((a, b) => a.at - b.at || (a.id ?? 0) - (b.id ?? 0));
 }
 
-// { left: 남은 개수, done: 다 쓴 개수, waiting: 아직 가계부에 안 들어간 돈 }
+// { left: 남은 품목 줄 수, units: 남은 낱개 수, done: 다 쓴 줄 수, waiting: 아직 가계부에 안 들어간 돈 }
 export function pantryStats(items) {
   let left = 0;
+  let units = 0;
   let done = 0;
   let waiting = 0;
   for (const it of items ?? []) {
@@ -562,9 +596,10 @@ export function pantryStats(items) {
       continue;
     }
     left += 1;
+    units += pantryLeftOf(it);
     if (it.charged_buy_id == null) waiting += Math.max(0, Math.trunc(Number(it.amount) || 0));
   }
-  return { left, done, waiting };
+  return { left, units, done, waiting };
 }
 
 // ---- 주문 스크린샷 읽기 ---------------------------------------------------------
@@ -617,8 +652,10 @@ export function parseOrderText(text) {
     if (isPriceLine(line, prices)) {
       if (name) {
         // 할인 상품은 낸 값과 취소선 그은 원래 값이 같이 적힌다 — 싼 쪽이 실제로 낸 값이다.
-        const qty = Number(QTY_RE.exec(line)?.[1] ?? 1);
-        out.push({ name: qty > 1 ? `${name} x${qty}`.slice(0, 40) : name, amount: Math.min(...prices) });
+        const qty = Math.max(1, Math.trunc(Number(QTY_RE.exec(line)?.[1]) || 1));
+        out.push(qty > 1
+          ? { name, amount: Math.min(...prices), qty }
+          : { name, amount: Math.min(...prices) });
         name = '';
       }
       continue;

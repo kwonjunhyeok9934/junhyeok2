@@ -1184,6 +1184,169 @@ begin
   return v_meal;
 end $$;
 
+-- 39. 사 둔 것: 개수 세기 ---------------------------------------------------------
+-- 같은 걸 세 개 사면 줄을 세 개 만들 게 아니라 "비엔나 3개" 한 줄로 담는다.
+-- 값(amount)은 그 세 개를 합쳐 낸 값이고, 규칙은 그대로다 — **처음 꺼내 먹을 때 한 번에** 들어간다.
+-- 달라지는 건 '얼마나 남았나' 뿐이다: 끼니마다 몇 개를 끝냈는지(줄의 used)를 적어 두고,
+-- 남은 개수는 그 품목을 가리키는 **모든 줄을 다시 더해서** 구한다. 다시 더하므로 끼니를
+-- 고치거나 지워도 저절로 맞는다 (두 번 빼지도, 덜 빼지도 않는다).
+--
+-- 'done' 은 이제 남은 개수에서 나온다. 어느 세트가 닫았는지 따로 기억할 필요가 없어
+-- done_buy_id 는 뗀다.
+
+alter table pantry_items add column if not exists qty integer not null default 1 check (qty >= 1);
+alter table pantry_items add column if not exists left_qty integer;
+update pantry_items set left_qty = case when done then 0 else qty end where left_qty is null;
+alter table pantry_items alter column left_qty set default 1;
+alter table pantry_items alter column left_qty set not null;
+alter table pantry_items drop column if exists done_buy_id;
+
+-- 그 품목이 지금 몇 개 남았는지. 예전 줄(used 가 없고 done 만 있는 것)은 한 개 쓴 것으로 본다.
+create or replace function pantry_left(p_id bigint) returns integer
+language sql stable security definer set search_path = public as $$
+  select greatest(0, coalesce((select qty from pantry_items where id = p_id), 0) - coalesce((
+    select sum(case
+                 when l ? 'used' then greatest(0, (l ->> 'used')::int)
+                 when coalesce((l ->> 'done')::boolean, false) then 1
+                 else 0
+               end)
+      from meal_buys b, jsonb_array_elements(b.lines) l
+     where nullif(l ->> 'pantry_id', '')::bigint = p_id), 0));
+$$;
+
+-- 세트가 사라지면 그 세트가 쥐고 있던 전가를 놓아 준다 (개수는 아래 AFTER 트리거가 다시 센다).
+-- BEFORE 여야 한다: AFTER 로 두면 FK 의 on delete set null 이 먼저 돌아 old.id 로 찾을 게 없다.
+create or replace function meal_buy_free_pantry() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  update pantry_items set charged_buy_id = null where charged_buy_id = old.id;
+  return old;
+end $$;
+
+-- 세트가 사라지면 그 거래도 사라지고, 그 세트가 쓰던 품목은 개수를 다시 센다.
+-- AFTER 여야 한다: 줄이 아직 남아 있는 BEFORE 에서 세면 방금 지운 것까지 세어 버린다.
+create or replace function meal_buy_drop_tx() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.transaction_id is not null then
+    delete from transactions where id = old.transaction_id;
+  end if;
+  update pantry_items p
+     set left_qty = pantry_left(p.id), done = pantry_left(p.id) <= 0
+   where p.id in (select nullif(l ->> 'pantry_id', '')::bigint from jsonb_array_elements(old.lines) l);
+  return null;
+end $$;
+
+-- save_meal 에 '개수 다시 세기' 를 더한다. 여기서도 정책은 없다 —
+-- 줄에 적힌 used 를 그대로 더할 뿐이고, 몇 개로 적을지는 화면(js/meal.js)이 정한다.
+create or replace function save_meal(p jsonb) returns bigint
+language plpgsql as $$
+declare
+  v_meal  bigint := nullif(p -> 'meal' ->> 'id', '')::bigint;
+  v_user  uuid   := auth.uid();
+  m       jsonb  := p -> 'meal' -> 'patch';
+  s       jsonb;
+  t       jsonb;
+  v_lines jsonb;
+  v_tx    bigint;
+  v_buy   bigint;
+begin
+  if v_meal is null then
+    insert into meals (date, slot, menu, eater, place_id, created_by)
+    values ((m ->> 'date')::date, m ->> 'slot', coalesce(m ->> 'menu', ''),
+            nullif(m ->> 'eater', '')::uuid, nullif(m ->> 'place_id', '')::bigint, v_user)
+    returning id into v_meal;
+  else
+    update meals set date = (m ->> 'date')::date, slot = m ->> 'slot', menu = coalesce(m ->> 'menu', ''),
+                     eater = nullif(m ->> 'eater', '')::uuid, place_id = nullif(m ->> 'place_id', '')::bigint
+    where id = v_meal;
+    if not found then   -- 다른 기기에서 이미 지웠다 → 새로 만든다
+      insert into meals (date, slot, menu, eater, place_id, created_by)
+      values ((m ->> 'date')::date, m ->> 'slot', coalesce(m ->> 'menu', ''),
+              nullif(m ->> 'eater', '')::uuid, nullif(m ->> 'place_id', '')::bigint, v_user)
+      returning id into v_meal;
+    end if;
+  end if;
+
+  -- 화면에서 뺀 세트만 지운다 (트리거가 그 거래와 개수까지 맞춘다).
+  delete from meal_buys
+  where meal_id = v_meal
+    and id in (select value::bigint from jsonb_array_elements_text(coalesce(p -> 'removed', '[]'::jsonb)));
+
+  for s in select * from jsonb_array_elements(coalesce(p -> 'buys', '[]'::jsonb)) loop
+    t       := s -> 'tx';
+    v_lines := coalesce(s -> 'patch' -> 'lines', '[]'::jsonb);
+    v_tx    := nullif(t ->> 'id', '')::bigint;
+
+    if t ->> 'op' = 'insert' then
+      insert into transactions (kind, amount, category_id, date, memo, created_by)
+      values ('expense', (t -> 'payload' ->> 'amount')::int,
+              nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+              (t -> 'payload' ->> 'date')::date, t -> 'payload' ->> 'memo', v_user)
+      returning id into v_tx;
+    elsif t ->> 'op' = 'update' then
+      update transactions set kind = 'expense', amount = (t -> 'payload' ->> 'amount')::int,
+             category_id = nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+             date = (t -> 'payload' ->> 'date')::date, memo = t -> 'payload' ->> 'memo'
+      where id = v_tx;
+      if not found then   -- 가계부에서 지워진 거래 → 새로 만들어 다시 연결한다
+        insert into transactions (kind, amount, category_id, date, memo, created_by)
+        values ('expense', (t -> 'payload' ->> 'amount')::int,
+                nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+                (t -> 'payload' ->> 'date')::date, t -> 'payload' ->> 'memo', v_user)
+        returning id into v_tx;
+      end if;
+    elsif t ->> 'op' = 'delete' then
+      delete from transactions where id = v_tx;   -- FK 가 세트의 연결을 끊는다
+      v_tx := null;
+    end if;
+
+    v_buy := nullif(s ->> 'id', '')::bigint;
+    if v_buy is null then
+      insert into meal_buys (meal_id, how_id, shop, lines, transaction_id, sort_order, created_by)
+      values (v_meal, nullif(s -> 'patch' ->> 'how_id', '')::bigint, coalesce(s -> 'patch' ->> 'shop', ''),
+              v_lines, v_tx, coalesce((s -> 'patch' ->> 'sort_order')::int, 0), v_user)
+      returning id into v_buy;
+    else
+      update meal_buys
+         set how_id = nullif(s -> 'patch' ->> 'how_id', '')::bigint,
+             shop = coalesce(s -> 'patch' ->> 'shop', ''),
+             lines = v_lines,
+             sort_order = coalesce((s -> 'patch' ->> 'sort_order')::int, 0),
+             transaction_id = case when t ->> 'op' = 'none' then transaction_id else v_tx end
+       where id = v_buy and meal_id = v_meal;
+      if not found then
+        insert into meal_buys (meal_id, how_id, shop, lines, transaction_id, sort_order, created_by)
+        values (v_meal, nullif(s -> 'patch' ->> 'how_id', '')::bigint, coalesce(s -> 'patch' ->> 'shop', ''),
+                v_lines, v_tx, coalesce((s -> 'patch' ->> 'sort_order')::int, 0), v_user)
+        returning id into v_buy;
+      end if;
+    end if;
+
+    -- 사 둔 것: 값이 실린 줄이 그 품목의 전가를 가져간다 (0원으로 붙은 줄은 안 가져간다).
+    update pantry_items p set charged_buy_id = v_buy
+      from jsonb_array_elements(v_lines) as e(line)
+     where p.id = nullif(line ->> 'pantry_id', '')::bigint
+       and coalesce((line ->> 'amount')::int, 0) > 0;
+
+    -- 이 세트에서 빠진 품목은 놓아 준다 — 다음에 꺼내 쓸 때 값이 다시 붙는다.
+    update pantry_items p set charged_buy_id = null
+     where p.charged_buy_id = v_buy
+       and not exists (
+         select 1 from jsonb_array_elements(v_lines) as e(line)
+          where nullif(line ->> 'pantry_id', '')::bigint = p.id
+            and coalesce((line ->> 'amount')::int, 0) > 0);
+
+    -- 이 세트가 건드린 품목만 개수를 다시 센다
+    -- (목록에서 손으로 눌러 둔 다른 품목은 그대로 둔다).
+    update pantry_items p
+       set left_qty = pantry_left(p.id), done = pantry_left(p.id) <= 0
+     where p.id in (select nullif(line ->> 'pantry_id', '')::bigint from jsonb_array_elements(v_lines) as e(line));
+  end loop;
+
+  return v_meal;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles

@@ -7,7 +7,7 @@
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
 import {
-  todayLocal, shiftDay, formatWon, howNeedsShop, groupPantryByHow, pantryStats, tagColor,
+  todayLocal, shiftDay, formatWon, howNeedsShop, groupPantryByHow, pantryStats, pantryLeftOf, tagColor,
   parseOrderText, guessOrderHow, guessOrderDate,
 } from './calc.js';
 import { fetchCategories } from './categories.js';
@@ -86,7 +86,7 @@ export async function load() {
       fetchCategories(),
       sb
         .from('pantry_items')
-        .select('id,how_id,name,amount,bought_on,charged_buy_id,done')
+        .select('id,how_id,name,amount,bought_on,charged_buy_id,done,qty,left_qty')
         // 남은 것은 전부, 다 쓴 것은 최근 두 달치만 (목록이 끝없이 길어지지 않게).
         .or(`done.eq.false,bought_on.gte.${shiftDay(todayLocal(), -60)}`)
         .order('bought_on', { ascending: false })
@@ -138,7 +138,7 @@ function render() {
   el.listHead.hidden = false;
 
   const stats = pantryStats(state.items);
-  animateNumber(el.left, stats.left, (n) => `${n}개`);
+  animateNumber(el.left, stats.units, (n) => `${n}개`);
   el.waiting.hidden = !stats.waiting;
   el.waiting.textContent = `${formatWon(stats.waiting)}원은 식비에서 처음 꺼내 먹을 때 가계부에 들어가요`;
   el.doneToggle.hidden = !stats.done;
@@ -165,12 +165,14 @@ function render() {
 
 function rowHtml(it, i) {
   const how = catsOf('meal_how').findIndex((c) => c.id === it.how_id);
+  const qty = Math.max(1, Number(it.qty) || 1);
+  const left = pantryLeftOf(it);
   return `
     <div class="tx-row pantry-row${it.done ? ' done' : ''}" data-pantry="${it.id}" style="--i:${Math.min(i, 12)}">
       <span class="tag how" style="${tint(tagColor(how))}">${escapeHtml(mdLabel(it.bought_on))}</span>
       <div class="tx-main">
-        <div class="tx-cat">${escapeHtml(it.name)}</div>
-        <div class="tx-memo">${it.charged_buy_id ? '가계부에 들어감' : '아직 안 들어감'}</div>
+        <div class="tx-cat">${escapeHtml(it.name)}${qty > 1 ? `<small> ×${qty}</small>` : ''}</div>
+        <div class="tx-memo">${it.charged_buy_id ? '가계부에 들어감' : '아직 안 들어감'}${qty > 1 && !it.done ? ` · ${left}개 남음` : ''}</div>
       </div>
       <span class="tx-amount">${it.amount ? formatWon(it.amount) : ''}</span>
       <button type="button" class="chip mini${it.done ? ' selected' : ''}" data-act="toggle">${it.done ? '다 씀' : '남김'}</button>
@@ -193,17 +195,21 @@ function onListClick(e) {
   else openSheetFor(item);
 }
 
-// 목록에서 바로 남김 ↔ 다 씀. 손으로 누른 것이라 어느 세트의 것도 아니게 둔다.
+// 목록에서 손으로 끝내거나 되돌린다. 끼니에 적어 둔 개수와 상관없이 여기서 정한 값이 된다
+// (그 품목을 쓴 끼니를 나중에 고치면 그때 다시 세어진다).
 async function toggleDone(item) {
   const done = !item.done;
+  const qty = Math.max(1, Number(item.qty) || 1);
+  const before = { done: item.done, left_qty: item.left_qty };
   item.done = done;
+  item.left_qty = done ? 0 : qty;
   render();
   if (done) haptic(15);
   try {
-    unwrap(await sb.from('pantry_items').update({ done, done_buy_id: null }).eq('id', item.id));
+    unwrap(await sb.from('pantry_items').update({ done, left_qty: item.left_qty }).eq('id', item.id));
   } catch (err) {
     console.error(err);
-    item.done = !done;
+    Object.assign(item, before);
     render();
     toast('변경에 실패했어요. 다시 시도해 주세요');
   }
@@ -228,7 +234,7 @@ function openSheetFor(item) {
   renderHows();
   el.rows.innerHTML = item
     ? editRowHtml(item)
-    : itemRowHtml({ name: '', amount: 0 }, { last: true, stacked: true, placeholder: PLACEHOLDER });
+    : itemRowHtml({ name: '', amount: 0 }, { last: true, stacked: true, qty: true, placeholder: PLACEHOLDER });
   recalcTotal();
   updateSaveState();
   openSheet(el.sheet);
@@ -238,10 +244,13 @@ function openSheetFor(item) {
 // 이미 가계부로 넘어간 품목은 가격 칸이 잠긴다 —
 // 그 끼니의 품목 줄이 원본이라 여기서 바꾸면 둘이 어긋난다.
 function editRowHtml(item) {
+  const qty = Math.max(1, Number(item.qty) || 1);
   return `
     <div class="row stacked">
       <input type="text" data-role="name" placeholder="${PLACEHOLDER}" maxlength="40" autocomplete="off"
              enterkeyhint="done" value="${escapeHtml(item.name)}">
+      <input type="text" data-role="qty" class="qty" inputmode="numeric" placeholder="1개" autocomplete="off"
+             aria-label="개수" value="${qty > 1 ? `${qty}개` : ''}">
       <input type="text" data-role="price" class="price" inputmode="numeric" placeholder="0" autocomplete="off"
              value="${item.amount ? formatWon(item.amount) : ''}"${item.charged_buy_id ? ' readonly' : ''}>
     </div>`;
@@ -326,8 +335,8 @@ async function onShotPick(e) {
 function fillRows(found) {
   const typed = readRows().filter((l) => l.name || l.amount);
   el.rows.innerHTML =
-    [...typed, ...found].map((l) => itemRowHtml(l, { stacked: true, placeholder: PLACEHOLDER })).join('') +
-    itemRowHtml({ name: '', amount: 0 }, { last: true, stacked: true, placeholder: PLACEHOLDER });
+    [...typed, ...found].map((l) => itemRowHtml(l, { stacked: true, qty: true, placeholder: PLACEHOLDER })).join('') +
+    itemRowHtml({ name: '', amount: 0 }, { last: true, stacked: true, qty: true, placeholder: PLACEHOLDER });
   recalcTotal();
   updateSaveState();
 }
@@ -340,7 +349,9 @@ async function save() {
   el.save.disabled = true;
   try {
     if (item) {
-      const patch = { how_id: state.howId, name: rows[0].name, bought_on: el.date.value };
+      const patch = { how_id: state.howId, name: rows[0].name, bought_on: el.date.value, qty: rows[0].qty };
+      // 개수를 줄이면 남은 개수도 그 안으로 (늘리면 늘어난 만큼 더 남는다)
+      patch.left_qty = Math.max(0, Math.min(rows[0].qty, pantryLeftOf(item) + (rows[0].qty - Math.max(1, Number(item.qty) || 1))));
       if (!item.charged_buy_id) patch.amount = rows[0].amount;
       unwrap(await sb.from('pantry_items').update(patch).eq('id', item.id));
     } else {
@@ -350,6 +361,8 @@ async function save() {
             how_id: state.howId,
             name: l.name,
             amount: l.amount,
+            qty: l.qty,
+            left_qty: l.qty,
             bought_on: el.date.value,
             created_by: state.userId,
           })),
