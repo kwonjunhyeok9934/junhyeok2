@@ -3,7 +3,7 @@ import { sb } from './supabase.js';
 import { $, escapeHtml, animateNumber, toast } from './ui.js';
 import { getWeather, hasLocation, requestLocation, pm10Grade, pm25Grade } from './weather.js';
 import { fetchAll as fetchAnniversaries, upcoming, dLabel } from './anniv.js';
-import { monthRange, shiftMonth, todayLocal, shiftDay, summarize, sortTodos, dueLabel, groupEventsByDate, formatTime, formatWon } from './calc.js';
+import { monthRange, shiftMonth, todayLocal, shiftDay, summarize, sortTodos, dueLabel, groupEventsByDate, formatTime, formatWon, dayName } from './calc.js';
 
 let el = null;
 let goTab = () => {};
@@ -73,8 +73,8 @@ function render({ today, tomorrow, txs, prevTxs, todos, events, profiles, annivs
   const todayEv = byDate.get(today) ?? [];
   const tomorrowEv = byDate.get(tomorrow) ?? [];
   const profile = new Map(profiles.map((p) => [p.id, p]));
-  const [y, m, d] = today.split('-').map(Number);
-  const dow = ['일', '월', '화', '수', '목', '금', '토'][new Date(y, m - 1, d).getDay()];
+  const [, m, d] = today.split('-').map(Number);
+  const dow = dayName(today);
   const hour = new Date().getHours();
   const greet = hour < 5 ? '편안한 밤이에요 🌙' : hour < 11 ? '좋은 아침이에요 ☀️' : hour < 17 ? '좋은 오후예요 🌤️' : hour < 22 ? '좋은 저녁이에요 🌆' : '편안한 밤이에요 🌙';
   const prevExpense = prevTxs.reduce((a, t) => a + t.amount, 0);

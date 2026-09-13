@@ -5,6 +5,8 @@ import {
   monthRange, shiftMonth, monthLabel, summarize, sumByCategory,
   groupByDate, formatWon, parseWon, dueLabel, sortTodos,
   calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
+  dayName, dayLabel, weekStart, weekDays, weekLabel, slotOfHour, mealMemo, resolveMealCategoryId,
+  mealAmount, groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByCategory, planMealSave, planMealDelete,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -167,4 +169,161 @@ test('nextOccurrence: 반복 기념일', () => {
 test('nextOccurrence: 한 번짜리', () => {
   assert.deepEqual(nextOccurrence('2026-12-24', '2026-09-05', false), { date: '2026-12-24', days: 110, years: 0, together: 0 });
   assert.equal(nextOccurrence('2026-01-01', '2026-09-05', false), null);
+});
+
+// ---- 식비(주간) ---------------------------------------------------------------
+// 2026-08-31 월, 2026-09-07 월, 2026-09-08 화, 2026-09-13 일
+
+test('dayName / dayLabel', () => {
+  assert.equal(dayName('2026-09-13'), '일');
+  assert.equal(dayName('2026-09-07'), '월');
+  assert.equal(dayLabel('2026-09-13'), '9월 13일 (일)');
+  assert.equal(dayLabel('2026-09-01'), '9월 1일 (화)');
+});
+
+test('weekStart: 월요일 시작', () => {
+  assert.equal(weekStart('2026-09-07'), '2026-09-07'); // 월요일은 그대로
+  assert.equal(weekStart('2026-09-08'), '2026-09-07'); // 화요일
+  assert.equal(weekStart('2026-09-13'), '2026-09-07'); // 일요일은 그 주의 끝
+  assert.equal(weekStart('2026-09-01'), '2026-08-31'); // 달 넘김
+});
+
+test('weekDays: 월~일 7개', () => {
+  assert.deepEqual(weekDays('2026-09-07'), [
+    '2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13',
+  ]);
+  assert.equal(weekDays('2026-08-31').at(-1), '2026-09-06');
+});
+
+test('weekLabel: 같은 달 / 달·해 넘김', () => {
+  assert.equal(weekLabel('2026-09-07'), '9월 7일 ~ 13일');
+  assert.equal(weekLabel('2026-08-31'), '8월 31일 ~ 9월 6일');
+  assert.equal(weekLabel('2026-12-28'), '12월 28일 ~ 1월 3일');
+});
+
+test('slotOfHour: 시각별 기본 끼니', () => {
+  assert.equal(slotOfHour(8), 'breakfast');
+  assert.equal(slotOfHour(12), 'lunch');
+  assert.equal(slotOfHour(19), 'dinner');
+  assert.equal(slotOfHour(23), 'night');
+});
+
+test('mealMemo: 빈 조각은 빼고 점으로 잇는다', () => {
+  assert.equal(mealMemo({ slot: 'lunch', menu: '제육덮밥', cat: '배달' }), '점심 · 제육덮밥 · 배달');
+  assert.equal(mealMemo({ slot: 'dinner', menu: '', bought: '돼지고기', cat: '마트' }), '저녁 · 돼지고기 · 마트');
+  assert.equal(mealMemo({ slot: 'night', menu: '', bought: '', cat: '' }), '야식');
+});
+
+test('resolveMealCategoryId: 연결된 거래의 분류를 유지한다', () => {
+  assert.equal(resolveMealCategoryId(cats, { category_id: 2 }), 2);   // 가계부에서 바꾼 분류를 되돌리지 않는다
+  assert.equal(resolveMealCategoryId(cats, null), 1);                 // 없으면 '식비'
+  assert.equal(resolveMealCategoryId([], null), null);                // '식비' 가 없으면 미분류
+});
+
+const meals = [
+  { id: 1, date: '2026-09-07', slot: 'lunch', menu: '제육덮밥', category_id: 21, created_at: '2026-09-07T04:00:00Z', transaction_id: 91, tx: { id: 91, kind: 'expense', amount: 12000 } },
+  { id: 2, date: '2026-09-07', slot: 'lunch', menu: '떡볶이', category_id: 22, created_at: '2026-09-07T05:00:00Z', transaction_id: 92, tx: { id: 92, kind: 'expense', amount: 8000 } },
+  { id: 3, date: '2026-09-07', slot: 'dinner', menu: '김치찌개', category_id: 20, created_at: '2026-09-07T11:00:00Z', transaction_id: null, tx: null },
+  { id: 4, date: '2026-09-08', slot: 'lunch', menu: '김밥', category_id: 21, created_at: '2026-09-08T04:00:00Z', transaction_id: 93, tx: { id: 93, kind: 'income', amount: 5000 } },
+];
+const mealCats = [
+  { id: 20, name: '집밥', kind: 'meal' },
+  { id: 21, name: '배달', kind: 'meal' },
+  { id: 22, name: '포장', kind: 'meal' },
+];
+
+test('mealAmount: 연결이 없거나 지출이 아니면 0', () => {
+  assert.equal(mealAmount(meals[0]), 12000);
+  assert.equal(mealAmount(meals[2]), 0);  // 돈 안 쓴 끼니
+  assert.equal(mealAmount(meals[3]), 0);  // 가계부에서 수입으로 바뀐 거래는 안 센다
+});
+
+test('groupMealsBySlot: 같은 끼니 여러 건은 만든 순', () => {
+  const g = groupMealsBySlot(meals);
+  assert.deepEqual(g.get('2026-09-07|lunch').map((m) => m.id), [1, 2]);
+  assert.deepEqual(g.get('2026-09-07|dinner').map((m) => m.id), [3]);
+  assert.equal(g.get('2026-09-07|breakfast'), undefined);
+});
+
+test('sumMeals: 돈 안 쓴 끼니는 합계에서 빠진다', () => {
+  assert.deepEqual(sumMeals(meals), { total: 20000, count: 4, paid: 2, home: 2 });
+  assert.deepEqual(sumMeals([]), { total: 0, count: 0, paid: 0, home: 0 });
+});
+
+test('sumMealsByDate: 날짜별 합계', () => {
+  const by = sumMealsByDate(meals);
+  assert.equal(by.get('2026-09-07'), 20000);
+  assert.equal(by.get('2026-09-08'), 0);
+});
+
+test('sumMealsByCategory: 큰 순, 이름 붙임', () => {
+  assert.deepEqual(sumMealsByCategory(meals, mealCats), [
+    { id: 21, name: '배달', total: 12000, count: 2 },
+    { id: 22, name: '포장', total: 8000, count: 1 },
+    { id: 20, name: '집밥', total: 0, count: 1 },
+  ]);
+});
+
+const input = { date: '2026-09-07', slot: 'lunch', menu: ' 제육덮밥 ', bought: '', categoryId: 21, amount: 12000 };
+const opts = { categoryId: 1, memo: '점심 · 제육덮밥 · 배달' };
+
+test('planMealSave: 금액과 함께 새로 만들면 거래를 insert 하고 링크한다', () => {
+  const p = planMealSave(null, input, opts);
+  assert.equal(p.tx.op, 'insert');
+  assert.deepEqual(p.tx.payload, { kind: 'expense', amount: 12000, category_id: 1, date: '2026-09-07', memo: opts.memo });
+  assert.equal(p.meal.op, 'insert');
+  assert.equal(p.meal.link, 'new');
+  assert.equal(p.meal.patch.menu, '제육덮밥'); // 앞뒤 공백 제거
+});
+
+test('planMealSave: 금액 없이 만들면 거래를 만들지 않는다', () => {
+  const p = planMealSave(null, { ...input, amount: 0 }, opts);
+  assert.equal(p.tx.op, 'none');
+  assert.equal(p.meal.link, 'null');
+});
+
+test('planMealSave: 금액 없던 기록에 금액을 채우면 거래를 insert 한다', () => {
+  const p = planMealSave({ id: 5, transaction_id: null }, input, opts);
+  assert.equal(p.tx.op, 'insert');
+  assert.equal(p.meal.op, 'update');
+  assert.equal(p.meal.id, 5);
+  assert.equal(p.meal.link, 'new');
+});
+
+test('planMealSave: 금액을 지우면 거래를 delete 하고 링크를 끊는다', () => {
+  const p = planMealSave({ id: 5, transaction_id: 91 }, { ...input, amount: 0 }, opts);
+  assert.deepEqual(p.tx, { op: 'delete', id: 91 });
+  assert.equal(p.meal.link, 'null');
+});
+
+test('planMealSave: 금액을 고치면 거래를 update 하고 링크는 유지한다', () => {
+  const p = planMealSave({ id: 5, transaction_id: 91 }, { ...input, amount: 15000 }, opts);
+  assert.equal(p.tx.op, 'update');
+  assert.equal(p.tx.id, 91);
+  assert.equal(p.tx.payload.amount, 15000);
+  assert.equal(p.meal.link, 'keep');
+});
+
+test('planMealSave: 거래 날짜는 끼니 날짜를 따라간다', () => {
+  const p = planMealSave({ id: 5, transaction_id: 91 }, { ...input, date: '2026-09-10' }, opts);
+  assert.equal(p.tx.payload.date, '2026-09-10');
+  assert.equal(p.meal.patch.date, '2026-09-10');
+});
+
+test('planMealSave: 돈 안 쓴 기록을 고쳐도 가계부는 건드리지 않는다', () => {
+  const p = planMealSave({ id: 5, transaction_id: null }, { ...input, menu: '김치찌개', amount: 0 }, opts);
+  assert.equal(p.tx.op, 'none');
+  assert.equal(p.meal.op, 'update');
+  assert.equal(p.meal.patch.menu, '김치찌개');
+});
+
+test('planMealDelete: 연결된 거래도 함께 지운다', () => {
+  assert.deepEqual(planMealDelete({ id: 5, transaction_id: 91 }), {
+    tx: { op: 'delete', id: 91 },
+    meal: { op: 'delete', id: 5 },
+  });
+  assert.deepEqual(planMealDelete({ id: 6, transaction_id: null }), {
+    tx: { op: 'none' },
+    meal: { op: 'delete', id: 6 },
+  });
 });

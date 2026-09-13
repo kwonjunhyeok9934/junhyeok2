@@ -1,7 +1,7 @@
 // 스케줄 탭: 월간 달력, 선택한 날 일정 목록, 일정 시트.
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic } from './ui.js';
-import { monthRange, shiftMonth, monthLabel, todayLocal, calendarGrid, groupEventsByDate, formatTime } from './calc.js';
+import { monthRange, shiftMonth, monthLabel, todayLocal, calendarGrid, groupEventsByDate, formatTime, dayLabel } from './calc.js';
 
 const state = { year: 0, month: 0, selected: '', events: [], profiles: [], userId: null, editing: null };
 let el = null;
@@ -137,12 +137,6 @@ function render() {
         </div>`;
       }).join('')
     : '<p class="empty small">일정이 없어요</p>';
-}
-
-function dayLabel(date) {
-  const [y, m, d] = date.split('-').map(Number);
-  const day = ['일', '월', '화', '수', '목', '금', '토'][new Date(y, m - 1, d).getDay()];
-  return `${m}월 ${d}일 (${day})`;
 }
 
 // ---- 시트 -----------------------------------------------------------------

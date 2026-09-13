@@ -2,7 +2,7 @@
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
 import {
-  monthRange, shiftMonth, todayLocal, summarize, sumByCategory, groupByDate, formatWon, parseWon, spanRange, rangeLabel, sumByMonth,
+  monthRange, shiftMonth, todayLocal, summarize, sumByCategory, groupByDate, formatWon, parseWon, spanRange, rangeLabel, sumByMonth, dayLabel,
 } from './calc.js';
 import { fetchCategories, addCategory } from './categories.js';
 
@@ -11,6 +11,7 @@ const state = {
   month: 0,
   txs: [],
   cats: [],
+  mealTxIds: new Set(),   // 식비 탭에서 만들어진 거래 id
   userId: null,
   editing: null,      // 수정 중인 거래 행, 새 항목이면 null
   kind: 'expense',
@@ -187,7 +188,7 @@ export async function refresh() {
   el.prev.hidden = custom;
   el.next.hidden = custom;
   try {
-    const [cats, txs] = await Promise.all([
+    const [cats, txs, mealLinks] = await Promise.all([
       fetchCategories(),
       sb
         .from('transactions')
@@ -197,9 +198,20 @@ export async function refresh() {
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
         .then(unwrap),
+      // 식비 탭에서 온 거래에 표시를 붙이려고 함께 본다.
+      // 아직 meals 표가 없어도 가계부가 죽지 않도록 조용히 빈 배열로 떨어진다.
+      sb
+        .from('meals')
+        .select('transaction_id')
+        .gte('date', start)
+        .lte('date', end)
+        .not('transaction_id', 'is', null)
+        .then(unwrap)
+        .catch(() => []),
     ]);
     state.cats = cats;
     state.txs = txs;
+    state.mealTxIds = new Set(mealLinks.map((m) => m.transaction_id));
     render();
   } catch (err) {
     console.error(err);
@@ -237,7 +249,7 @@ function render() {
   el.list.innerHTML = groupByDate(state.txs)
     .map(
       (g) => `
-      <div class="date-head">${dateHead(g.date)}</div>
+      <div class="date-head">${dayLabel(g.date)}</div>
       ${g.items.map((t) => txRow(t, catName, i++)).join('')}`,
     )
     .join('');
@@ -264,18 +276,12 @@ function renderChart() {
     .join('');
 }
 
-function dateHead(date) {
-  const [y, m, d] = date.split('-').map(Number);
-  const day = ['일', '월', '화', '수', '목', '금', '토'][new Date(y, m - 1, d).getDay()];
-  return `${m}월 ${d}일 (${day})`;
-}
-
 function txRow(t, catName, i) {
   const isIncome = t.kind === 'income';
   return `
     <div class="tx-row" data-id="${t.id}" style="--i:${Math.min(i, 12)}">
       <div class="tx-main">
-        <div class="tx-cat">${escapeHtml(catName.get(t.category_id) ?? '미분류')}</div>
+        <div class="tx-cat">${escapeHtml(catName.get(t.category_id) ?? '미분류')}${state.mealTxIds.has(t.id) ? '<span class="tag">식비 탭</span>' : ''}</div>
         ${t.memo ? `<div class="tx-memo">${escapeHtml(t.memo)}</div>` : ''}
       </div>
       <div class="tx-amount ${isIncome ? 'income' : ''}">${isIncome ? '+' : ''}${formatWon(t.amount)}</div>
@@ -371,7 +377,10 @@ async function save() {
 
 async function remove() {
   if (!state.editing) return;
-  if (!confirmDialog('이 기록을 삭제할까요?')) return;
+  const msg = state.mealTxIds.has(state.editing.id)
+    ? '이 지출은 식비 탭 기록과 연결돼 있어요.\n지우면 그 끼니는 금액 없이 남아요. 지울까요?'
+    : '이 기록을 삭제할까요?';
+  if (!confirmDialog(msg)) return;
   try {
     unwrap(await sb.from('transactions').delete().eq('id', state.editing.id));
     closeSheet(el.sheet);

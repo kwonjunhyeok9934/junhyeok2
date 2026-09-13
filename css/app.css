@@ -175,13 +175,13 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .sum-label { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
 .sum-item strong { display: block; font-size: 16px; margin-top: 4px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .income { color: var(--income); }
-#cat-totals { margin-bottom: 14px; padding: 14px 16px; }
-#cat-totals summary { cursor: pointer; font-weight: 600; color: var(--text-2); font-size: 14px; list-style: none; display: flex; justify-content: space-between; }
-#cat-totals summary::-webkit-details-marker { display: none; }
-#cat-totals summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
-#cat-totals[open] summary::after { transform: rotate(180deg); }
-#cat-totals-list { margin-top: 10px; }
-#cat-totals-list li { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+#cat-totals, #meal-cat-totals { margin-bottom: 14px; padding: 14px 16px; }
+#cat-totals summary, #meal-cat-totals summary { cursor: pointer; font-weight: 600; color: var(--text-2); font-size: 14px; list-style: none; display: flex; justify-content: space-between; }
+#cat-totals summary::-webkit-details-marker, #meal-cat-totals summary::-webkit-details-marker { display: none; }
+#cat-totals summary::after, #meal-cat-totals summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
+#cat-totals[open] summary::after, #meal-cat-totals[open] summary::after { transform: rotate(180deg); }
+#cat-totals-list, #meal-cat-list { margin-top: 10px; }
+#cat-totals-list li, #meal-cat-list li { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 
 .date-head { color: var(--muted); font-size: 13px; font-weight: 600; margin: 16px 0 8px 4px; }
 .tx-row, .todo-row, .event-row {
@@ -340,7 +340,7 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .by-owner .who { display: block; font-size: 12px; color: var(--muted); }
 .by-owner .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
 .group-head { display: flex; justify-content: space-between; align-items: center; color: var(--text-2); font-size: 13px; font-weight: 600; margin: 16px 4px 8px; }
-.group-head .sub { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.group-head .sub, .day-head .sub { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 .list-head { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); margin: 6px 4px 10px; }
 .list-head .count { color: var(--muted); font-weight: 500; }
 .list-head .btn { margin-left: auto; }
@@ -439,3 +439,14 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .bar.cur .val { color: var(--accent); font-weight: 700; }
 .bar .lbl { font-size: 11px; color: var(--muted); margin-top: 4px; }
 .bar.cur .lbl { color: var(--text); font-weight: 600; }
+
+/* ---- 식비 ---- */
+.day-card { padding: 4px 14px 10px; margin-bottom: 10px; }
+.day-head { display: flex; justify-content: space-between; align-items: center; color: var(--text-2); font-size: 13px; font-weight: 600; padding: 10px 0 6px; }
+.meal-row { margin-bottom: 6px; padding: 10px 12px; box-shadow: none; background: var(--bg); }
+.meal-row:last-child { margin-bottom: 0; }
+.meal-row.empty-slot { background: transparent; border: 1.5px dashed var(--line); }
+.meal-slot { width: 38px; flex: none; font-weight: 700; font-size: 13px; color: var(--text-2); }
+.meal-row.empty-slot .meal-slot { color: var(--muted); font-weight: 600; }
+.tag { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+.slot-add { flex: none; width: 24px; text-align: center; font-size: 15px; color: var(--muted); padding: 0; }

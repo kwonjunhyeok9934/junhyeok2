@@ -267,6 +267,54 @@ drop trigger if exists notify_todos_assign on todos;
 create trigger notify_todos_assign after update of assignee on todos
   for each row when (new.assignee is distinct from old.assignee) execute function notify_webhook();
 
+-- 21. 식비(식단) ---------------------------------------------------------------
+-- 금액은 여기 두지 않는다. 돈을 쓴 끼니는 transactions 행 하나와 1:1 로 연결된다.
+-- 연결이 끊기면(가계부에서 거래를 지우면) 그 끼니는 '돈 안 쓴 끼니'가 된다.
+-- 알림 트리거는 붙이지 않는다: 돈을 쓴 끼니는 transactions 트리거가 이미 한 번 알린다.
+
+create table if not exists meals (
+  id             bigint generated always as identity primary key,
+  date           date not null,
+  -- 'grocery'(장보기)는 아직 화면에 없다. 나중에 쓰려면 SQL 을 또 실행해야 해서 미리 열어 둔다.
+  slot           text not null check (slot in ('breakfast', 'lunch', 'dinner', 'night', 'grocery')),
+  menu           text not null default '',   -- 먹은 메뉴
+  bought         text not null default '',   -- 산 것 (장본 품목)
+  category_id    bigint references categories(id) on delete set null,   -- kind='meal'
+  transaction_id bigint references transactions(id) on delete set null,
+  created_by     uuid not null references auth.users(id),
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists meals_date_idx on meals (date);
+-- 한 거래를 두 끼니가 가리키면 합계가 두 번 잡힌다. null 은 여러 개 허용된다.
+create unique index if not exists meals_transaction_id_key on meals (transaction_id);
+
+alter table meals enable row level security;
+drop policy if exists "auth all" on meals;
+create policy "auth all" on meals for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'meals') then
+    alter publication supabase_realtime add table meals;
+  end if;
+end $$;
+
+-- 식비 카테고리 (설정 → 카테고리에서 이름·순서·추가·삭제 가능)
+alter table categories drop constraint if exists categories_kind_check;
+alter table categories add constraint categories_kind_check check (kind in ('expense', 'income', 'fixed', 'meal'));
+
+insert into categories (name, kind, sort_order)
+select * from (values
+  ('집밥', 'meal', 10),
+  ('배달', 'meal', 20),
+  ('포장', 'meal', 30),
+  ('외식', 'meal', 40),
+  ('마트', 'meal', 50),
+  ('컬리', 'meal', 60)
+) as v(name, kind, sort_order)
+where not exists (select 1 from categories where kind = 'meal');
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
@@ -276,4 +324,5 @@ union all select 'todos', count(*) from todos
 union all select 'events', count(*) from events
 union all select 'fixed_costs', count(*) from fixed_costs
 union all select 'push_subscriptions', count(*) from push_subscriptions
-union all select 'anniversaries', count(*) from anniversaries;
+union all select 'anniversaries', count(*) from anniversaries
+union all select 'meals', count(*) from meals;

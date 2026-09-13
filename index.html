@@ -121,6 +121,29 @@
       <h2 id="day-label" class="day-label"></h2>
       <div id="event-list"><div class="skel"></div></div>
     </section>
+
+    <section id="tab-meal" class="tab" hidden>
+      <div class="month-nav">
+        <button id="meal-prev" class="icon-btn" aria-label="지난 주">◀</button>
+        <span id="meal-label"></span>
+        <button id="meal-next" class="icon-btn" aria-label="다음 주">▶</button>
+      </div>
+      <div class="range-row"><button type="button" id="meal-this-week" class="pill" hidden>이번 주로</button></div>
+
+      <div class="summary">
+        <div class="sum-item"><span class="sum-label">식비 합계</span><strong id="meal-sum">0</strong></div>
+        <div class="sum-item"><span class="sum-label">직전 주</span><strong id="meal-sum-prev">0</strong></div>
+        <div class="sum-item"><span class="sum-label">차이</span><strong id="meal-sum-diff">0</strong></div>
+      </div>
+
+      <p id="meal-onboard" class="hint" hidden>칸을 눌러 뭘 먹었는지 적어 보세요. 금액은 안 적어도 돼요.</p>
+      <div id="meal-week"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+
+      <details id="meal-cat-totals" class="card" hidden>
+        <summary>카테고리별 식비</summary>
+        <ul id="meal-cat-list" class="plain-list"></ul>
+      </details>
+    </section>
   </main>
 
   <button id="btn-add" class="fab" aria-label="추가">＋</button>
@@ -131,6 +154,7 @@
     <a href="#fixed" data-tab="fixed"><span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M5 8l7-5 7 5M6 21h12"/><path d="M8 12h8"/></svg></span>고정비</a>
     <a href="#todo" data-tab="todo"><span class="tab-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span>할일</a>
     <a href="#schedule" data-tab="schedule"><span class="tab-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>스케줄</a>
+    <a href="#meal" data-tab="meal"><span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M3.5 17.5h17"/><path d="M5 17.5a7 7 0 0 1 14 0"/><path d="M12 7.5v3"/></svg></span>식비</a>
   </nav>
 </div>
 
@@ -268,6 +292,53 @@
       <div class="row actions">
         <button type="button" id="event-delete" class="btn danger" hidden>삭제</button>
         <button type="submit" id="event-save" class="btn primary grow" disabled>저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 식비 입력 시트 -->
+<div id="sheet-meal" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <form id="meal-form">
+      <input type="hidden" id="meal-id">
+
+      <input id="meal-date" type="date" required>
+
+      <div class="seg" id="meal-slot-seg">
+        <label><input type="radio" name="meal-slot" value="breakfast"><span>아침</span></label>
+        <label><input type="radio" name="meal-slot" value="lunch" checked><span>점심</span></label>
+        <label><input type="radio" name="meal-slot" value="dinner"><span>저녁</span></label>
+        <label><input type="radio" name="meal-slot" value="night"><span>야식</span></label>
+      </div>
+
+      <input id="meal-menu" type="text" placeholder="뭐 먹었어요? (예: 제육덮밥, 만두)" maxlength="120" autocomplete="off">
+
+      <div>
+        <div class="field-label">어디서</div>
+        <div id="meal-cats" class="chips"></div>
+        <div id="meal-new-cat-row" class="row" hidden style="margin-top:8px">
+          <input id="meal-new-cat" type="text" placeholder="새 카테고리 이름" maxlength="20">
+          <button type="button" id="meal-new-cat-ok" class="btn small">추가</button>
+        </div>
+      </div>
+
+      <label class="amount-field" id="meal-amount-field" hidden>
+        <span class="won">₩</span>
+        <input id="meal-amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off">
+      </label>
+
+      <div id="meal-bought-row" hidden>
+        <div class="field-label">산 것</div>
+        <input id="meal-bought" type="text" placeholder="예: 삼겹살 600g, 우유, 계란" maxlength="120" autocomplete="off">
+      </div>
+
+      <p id="meal-cat-warn" class="hint" hidden>가계부에 '식비' 카테고리가 없어서 미분류로 기록돼요.</p>
+
+      <div class="row actions">
+        <button type="button" id="meal-delete" class="btn danger" hidden>삭제</button>
+        <button type="submit" id="meal-save" class="btn primary grow" disabled>저장</button>
       </div>
     </form>
   </div>

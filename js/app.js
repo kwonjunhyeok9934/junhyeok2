@@ -8,8 +8,9 @@ import * as fixed from './fixed.js';
 import * as home from './home.js';
 import * as push from './push.js';
 import * as anniv from './anniv.js';
+import * as meal from './meal.js';
 
-const APP_VERSION = 'v16'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v17'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -25,6 +26,7 @@ const TABS = {
   fixed: { title: '고정비', el: $('#tab-fixed') },
   todo: { title: '할일', el: $('#tab-todo') },
   schedule: { title: '스케줄', el: $('#tab-schedule') },
+  meal: { title: '식비', el: $('#tab-meal') },
 };
 
 let currentUser = null;
@@ -127,6 +129,7 @@ function enterMain(user) {
   todo.init({ userId: user.id });
   schedule.init({ userId: user.id });
   fixed.init();
+  meal.init({ userId: user.id, onTxChange: () => { ledger.refresh(); home.refresh(); } });
   home.init({ onGo: goTab });
   routeHash();
   home.refresh();
@@ -134,6 +137,7 @@ function enterMain(user) {
   todo.refresh();
   schedule.refresh();
   fixed.refresh();
+  meal.refresh();
   subscribeRealtime();
   document.addEventListener('visibilitychange', onVisible);
 }
@@ -154,18 +158,20 @@ function onVisible() {
   todo.refresh();
   schedule.refresh();
   fixed.refresh();
+  meal.refresh();
 }
 
 function subscribeRealtime() {
   if (channel) return;
   channel = sb
     .channel('db-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => { ledger.refresh(); home.refresh(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => { ledger.refresh(); home.refresh(); meal.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => ledger.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => { todo.refresh(); home.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => { schedule.refresh(); home.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => fixed.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'anniversaries' }, () => home.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'meals' }, () => meal.refresh())
     .subscribe();
 }
 
@@ -186,6 +192,7 @@ function bindTabs() {
     const tab = currentTab();
     if (tab === 'schedule') schedule.openNew();
     else if (tab === 'fixed') fixed.openNew();
+    else if (tab === 'meal') meal.openNew();
     else ledger.openNew(); // 홈·가계부는 지출 입력
   });
 }
