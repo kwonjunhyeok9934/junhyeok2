@@ -540,6 +540,14 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .row.stacked > .price { flex: 0 0 110px; }
 .row > input.qty { flex: 0 0 66px; text-align: center; }
 
+/* 읽은 글 보기 — 엉뚱하게 읽혔을 때 무엇을 봤는지 눈으로 확인한다 */
+#pantry-shot-raw summary { color: var(--muted); font-size: 13px; cursor: pointer; padding: 6px 0; }
+#pantry-shot-text {
+  margin: 4px 0 0; padding: 10px 12px; background: var(--bg); border-radius: 12px;
+  max-height: 40vh; overflow: auto; white-space: pre-wrap; word-break: break-all;
+  font-size: 12px; line-height: 1.6; color: var(--text-2); user-select: text; -webkit-user-select: text;
+}
+
 .pantry-line { background: var(--bg); border-radius: 12px; padding: 9px 12px; }
 .pantry-line .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pantry-line .pr { flex: none; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }

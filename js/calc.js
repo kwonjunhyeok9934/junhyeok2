@@ -610,6 +610,7 @@ export function pantryStats(items) {
 
 // 가격·수량·구분선만 남은 줄인지 보려고 지우는 것들.
 const PRICE_RE = /(\d[\d,.]*)\s*원/g;
+const PRICE_AT = /(\d[\d,.]*)\s*원/;   // 값이 줄 어디쯤에서 시작하는지 (이름과 한 줄에 있을 때)
 const QTY_RE = /(\d+)\s*개/;
 
 // 품목 이름도, 가격 줄도 될 수 없는 줄 (배송·주문·결제 안내).
@@ -652,27 +653,40 @@ function isPriceLine(line, prices) {
 export function parseOrderText(text) {
   const lines = String(text ?? '')
     .split('\n')
-    .map((l) => l.trim())
+    .map((l) => unspace(l.trim()))
     .filter(Boolean);
 
   const out = [];
   let name = '';
+  const add = (nm, line, prices) => {
+    // 할인 상품은 낸 값과 취소선 그은 원래 값이 같이 적힌다 — 싼 쪽이 실제로 낸 값이다.
+    const qty = Math.max(1, Math.trunc(Number(QTY_RE.exec(line)?.[1]) || 1));
+    const amount = Math.min(...prices);
+    out.push(qty > 1 ? { name: nm, amount, qty } : { name: nm, amount });
+  };
+
   for (const line of lines) {
+    if (isOrderNoise(line)) continue;
     const prices = pricesIn(line);
-    if (isPriceLine(line, prices)) {
+
+    if (!prices.length) {          // 값이 없는 줄 = 품목 이름 후보
+      name = line.slice(0, 40);
+      continue;
+    }
+    if (isPriceLine(line, prices)) {   // 값만 있는 줄 = 이름은 바로 위에 있다
       if (name) {
-        // 할인 상품은 낸 값과 취소선 그은 원래 값이 같이 적힌다 — 싼 쪽이 실제로 낸 값이다.
-        const qty = Math.max(1, Math.trunc(Number(QTY_RE.exec(line)?.[1]) || 1));
-        out.push(qty > 1
-          ? { name, amount: Math.min(...prices), qty }
-          : { name, amount: Math.min(...prices) });
+        add(name, line, prices);
         name = '';
       }
       continue;
     }
-    if (isOrderNoise(line)) continue;
-    // 가격이 섞인 설명 줄(= 가격 줄은 아닌 줄)은 이름으로 삼지 않는다.
-    if (!prices.length) name = unspace(line).slice(0, 40);
+    // 이름과 값이 한 줄에 같이 나온 경우 ('… 케제크라이너 4,480원 1개').
+    // 값 앞을 이름으로 쓴다 — 안 그러면 그 품목이 통째로 사라진다.
+    const head = line.slice(0, PRICE_AT.exec(line)?.index ?? 0).trim();
+    if (head) {
+      add(head.slice(0, 40), line, prices);
+      name = '';
+    }
   }
   return out;
 }

@@ -69,11 +69,12 @@ function dropOldCache() {
 export const supported = () => typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
 
 // file(사진) → 읽은 글. onProgress(0~1) 로 진행률을 알려 준다.
-// 주문 내역은 '한 칸에 위에서 아래로 쌓인 글' 이다. 기본값(3 = 알아서 판단)보다
-// 4(한 칸짜리 글) 가 이 화면에서 확실히 낫다 (글자 정확도 78% → 84%).
-const PAGESEG_SINGLE_COLUMN = '4';
+// 화면을 어떻게 훑을지. 주문 내역은 '한 칸에 위에서 아래로 쌓인 글' 이라 기본값
+// (3 = 알아서 판단)보다 COLUMN 이 낫다 (글자 정확도 78% → 84%). 다만 사진·버튼이 섞인
+// 진짜 스크린샷에서는 BLOCK 이 나을 때가 있어 둘 다 열어 둔다 (js/pantry.js 가 한 번 더 시도한다).
+export const PSM = { COLUMN: '4', BLOCK: '6', AUTO: '3' };
 
-export async function readText(file, onProgress = () => {}) {
+export async function readText(file, onProgress = () => {}, psm = PSM.COLUMN) {
   const T = await tesseract();
   dropOldCache();
   const worker = await T.createWorker('kor', 1, {
@@ -86,7 +87,7 @@ export async function readText(file, onProgress = () => {}) {
     },
   });
   try {
-    await worker.setParameters({ tessedit_pageseg_mode: PAGESEG_SINGLE_COLUMN });
+    await worker.setParameters({ tessedit_pageseg_mode: psm });
     const { data } = await worker.recognize(file);
     return data.text ?? '';
   } finally {

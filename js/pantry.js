@@ -42,6 +42,7 @@ export function init({ userId }) {
     save: $('#pantry-save'), del: $('#pantry-delete'),
     shotRow: $('#pantry-shot-row'), shot: $('#pantry-shot'),
     shotFile: $('#pantry-shot-file'), shotNote: $('#pantry-shot-note'),
+    shotRaw: $('#pantry-shot-raw'), shotText: $('#pantry-shot-text'),
   };
 
   bindSheetBackdrop(el.sheet);
@@ -231,6 +232,8 @@ function openSheetFor(item) {
   el.shotRow.hidden = !!item || !ocr.supported(); // 한 품목을 고칠 때는 스크린샷 읽기가 필요 없다
   el.shot.disabled = false;
   el.shotNote.hidden = true;
+  el.shotRaw.hidden = true;
+  el.shotRaw.open = false;
   renderHows();
   el.rows.innerHTML = item
     ? editRowHtml(item)
@@ -304,13 +307,25 @@ async function onShotPick(e) {
   el.shot.disabled = true;
   el.shotNote.hidden = false;
   el.shotNote.textContent = '읽는 중… 처음 한 번은 한글 데이터를 받느라 좀 걸려요';
+  const show = (p) => { el.shotNote.textContent = `읽는 중… ${Math.round(p * 100)}%`; };
   try {
-    const text = await ocr.readText(file, (p) => {
-      el.shotNote.textContent = `읽는 중… ${Math.round(p * 100)}%`;
-    });
-    const found = parseOrderText(text);
+    let text = await ocr.readText(file, show, ocr.PSM.COLUMN);
+    let found = parseOrderText(text);
+    // 사진·버튼이 섞인 화면은 훑는 방식에 따라 결과가 확 달라진다. 거의 못 찾았으면 한 번 더.
+    if (found.length < 2) {
+      el.shotNote.textContent = '다시 한 번 읽는 중…';
+      const alt = await ocr.readText(file, show, ocr.PSM.BLOCK);
+      const altFound = parseOrderText(alt);
+      if (altFound.length > found.length) {
+        text = alt;
+        found = altFound;
+      }
+    }
+    // 읽은 글은 늘 펼쳐 볼 수 있게 둔다 — 엉뚱하게 나왔을 때 무엇을 봤는지 알 수 있어야 한다.
+    el.shotRaw.hidden = false;
+    el.shotText.textContent = text.trim() || '(글자를 하나도 못 읽었어요)';
     if (!found.length) {
-      el.shotNote.textContent = '품목을 못 찾았어요. 아래에 직접 적어 주세요.';
+      el.shotNote.textContent = '품목을 못 찾았어요. 아래 \'읽은 글 보기\' 로 뭘 봤는지 확인할 수 있어요.';
       return;
     }
     const how = guessOrderHow(text, state.cats);
