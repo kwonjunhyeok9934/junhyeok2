@@ -230,7 +230,8 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
   background-size: 200% 100%; animation: shimmer 1.2s infinite linear; }
 
 /* ---- 시트 ---- */
-.sheet { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+/* 시트는 오버레이(여행 상세·설정, z-index 30) 위에 떠야 한다 — 상세에서 일정 시트를 연다 */
+.sheet { position: fixed; inset: 0; z-index: 35; pointer-events: none; }
 .sheet-backdrop {
   position: absolute; inset: 0; background: rgba(0, 0, 0, .45);
   opacity: 0; transition: opacity .25s;
@@ -576,3 +577,17 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .mini-map path { fill: var(--line); stroke: var(--card); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
 .mini-map path.on { fill: var(--accent); }
 .mini-map text { fill: var(--text); text-anchor: middle; dominant-baseline: central; font-weight: 700; stroke: var(--card); paint-order: stroke; stroke-linejoin: round; }
+
+/* 여행 상세의 일차별 일정 */
+.plans h2 .count { color: var(--accent); }
+.plan-day { margin-top: 12px; padding-top: 6px; border-top: 1px solid var(--line); }
+.plan-day:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+.plan-day.today .day-head { color: var(--accent); }
+.plan-row { background: var(--bg); box-shadow: none; margin-bottom: 6px; padding: 11px 12px; }
+.plan-add {
+  width: 100%; border: 1.5px dashed var(--line); background: transparent; color: var(--muted);
+  border-radius: 12px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: transform .12s var(--spring), background-color .15s;
+}
+.plan-add:active { transform: scale(.98); background: var(--accent-soft); }
+#plan-days .chip small { color: inherit; opacity: .65; }

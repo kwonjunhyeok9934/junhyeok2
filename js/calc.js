@@ -532,6 +532,35 @@ export function sortTrips(trips, today) {
   return { upcoming, past };
 }
 
+// 여행 이름은 안 적어도 된다 — "어디" 로 짓는다. 제주시를 두 번 갔으면 다음은 "제주시 3".
+export function nextTripName(place, been = 0) {
+  const name = (place ?? '').trim();
+  if (!name) return '여행';
+  return been > 0 ? `${name} ${been + 1}` : name;
+}
+
+// 여행 기간의 날짜들 ['2026-09-13', '2026-09-14', '2026-09-15']
+export function tripDates(start, end) {
+  const out = [];
+  for (let d = start; d <= end && out.length < 60; d = shiftDay(d, 1)) out.push(d);
+  return out;
+}
+
+// 일차별로 묶는다. 날짜가 기간 밖이면 첫날에 붙여 둔다 (기간을 줄였을 때 사라지지 않게).
+export function groupPlansByDate(plans, dates) {
+  const map = new Map(dates.map((d) => [d, []]));
+  for (const p of plans) {
+    const key = map.has(p.date) ? p.date : dates[0];
+    if (key !== undefined) map.get(key).push(p);
+  }
+  for (const list of map.values()) list.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || a.id - b.id);
+  return map;
+}
+
+export function sumPlans(plans) {
+  return plans.reduce((a, p) => a + (p.amount || 0), 0);
+}
+
 // Map<지역코드, [여행…]>. 여행은 최근 순.
 export function tripsByRegion(trips) {
   const map = new Map();

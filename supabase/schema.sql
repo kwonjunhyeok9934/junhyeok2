@@ -609,7 +609,7 @@ end $$;
 -- 여행 하나 = 제목 + 기간 + 지역 여러 개(제주 여행이면 제주시·서귀포시).
 -- 지도 색칠은 여기서 자동으로 따라간다 — 직접 칠한 곳은 visited_regions 에 그대로 있고,
 -- 지도는 둘을 합쳐 보여준다.
--- 여행 중에 쓴 돈은 따로 적지 않는다. 가계부에서 그 기간을 더해 보여 준다.
+-- 준비물과 일정은 31번에 있다. 여행 중에 쓴 돈은 그 일정 줄에서 가계부로 넘어간다.
 
 create table if not exists trips (
   id         bigint generated always as identity primary key,
@@ -629,25 +629,12 @@ create table if not exists trip_regions (
   primary key (trip_id, code)
 );
 
--- 준비물 체크리스트. 할일 탭과 섞이면 지저분해서 여행 안에만 둔다.
-create table if not exists trip_items (
-  id         bigint generated always as identity primary key,
-  trip_id    bigint not null references trips(id) on delete cascade,
-  title      text not null,
-  done       boolean not null default false,
-  created_at timestamptz not null default now()
-);
-create index if not exists trip_items_trip_idx on trip_items (trip_id);
-
 alter table trips        enable row level security;
 alter table trip_regions enable row level security;
-alter table trip_items   enable row level security;
 drop policy if exists "auth all" on trips;
 drop policy if exists "auth all" on trip_regions;
-drop policy if exists "auth all" on trip_items;
 create policy "auth all" on trips        for all to authenticated using (true) with check (true);
 create policy "auth all" on trip_regions for all to authenticated using (true) with check (true);
-create policy "auth all" on trip_items   for all to authenticated using (true) with check (true);
 
 do $$
 begin
@@ -657,11 +644,137 @@ begin
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'trip_regions') then
     alter publication supabase_realtime add table trip_regions;
   end if;
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'trip_items') then
-    alter publication supabase_realtime add table trip_items;
-  end if;
 
 end $$;
+
+-- 31. 여행 준비물·일정 ---------------------------------------------------------
+-- 준비물은 여행마다 새로 적지 않는다. 공용 체크리스트(packing_items)를 한 벌 두고
+-- 여행에서는 "챙겼다" 만 체크한다(trip_packed 에 줄이 있으면 체크된 것).
+-- 일정은 하루에 여러 줄이다. 어디를 갔고 얼마를 썼는지 적으면 금액은 가계부 거래로 따라 들어간다
+-- (식비와 같은 방식: 줄 하나 = 거래 하나, 줄을 지우면 트리거가 거래도 지운다).
+
+drop table if exists trip_items;   -- 29번의 '여행마다 적는 준비물' → 공용 체크리스트로 바뀌었다
+
+create table if not exists packing_items (
+  id         bigint generated always as identity primary key,
+  title      text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists trip_packed (
+  trip_id bigint not null references trips(id) on delete cascade,
+  item_id bigint not null references packing_items(id) on delete cascade,
+  primary key (trip_id, item_id)
+);
+
+create table if not exists trip_plans (
+  id             bigint generated always as identity primary key,
+  trip_id        bigint not null references trips(id) on delete cascade,
+  date           date not null,                  -- 며칠째인지는 날짜로 둔다 (기간을 고쳐도 안 어긋나게)
+  place          text not null default '',       -- 어디
+  memo           text not null default '',
+  amount         integer not null default 0 check (amount >= 0),   -- 얼마 (가계부 거래의 원본)
+  transaction_id bigint references transactions(id) on delete set null,
+  created_by     uuid not null references auth.users(id),
+  created_at     timestamptz not null default now()
+);
+create index if not exists trip_plans_trip_idx on trip_plans (trip_id, date);
+-- 한 거래를 두 줄이 가리키면 합계가 두 번 잡힌다. null 은 여러 개 허용된다.
+create unique index if not exists trip_plans_transaction_id_key on trip_plans (transaction_id);
+
+alter table packing_items enable row level security;
+alter table trip_packed   enable row level security;
+alter table trip_plans    enable row level security;
+drop policy if exists "auth all" on packing_items;
+drop policy if exists "auth all" on trip_packed;
+drop policy if exists "auth all" on trip_plans;
+create policy "auth all" on packing_items for all to authenticated using (true) with check (true);
+create policy "auth all" on trip_packed   for all to authenticated using (true) with check (true);
+create policy "auth all" on trip_plans    for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'packing_items') then
+    alter publication supabase_realtime add table packing_items;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'trip_packed') then
+    alter publication supabase_realtime add table trip_packed;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'trip_plans') then
+    alter publication supabase_realtime add table trip_plans;
+  end if;
+end $$;
+
+-- 일정 줄이 사라지면 그 거래도 사라진다 (여행을 지워 cascade 로 지워질 때도 돈다).
+-- AFTER 여야 한다: BEFORE 에서 지우면 FK on delete set null 이 지금 지워지는 중인 행을 건드린다.
+create or replace function trip_plan_drop_tx() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.transaction_id is not null then
+    delete from transactions where id = old.transaction_id;
+  end if;
+  return null;
+end $$;
+
+drop trigger if exists trip_plans_after_delete on trip_plans;
+create trigger trip_plans_after_delete after delete on trip_plans
+  for each row execute function trip_plan_drop_tx();
+
+-- 일정 한 줄 저장: 가계부 거래와 함께 한 번에 쓴다. 중간에 실패하면 아무것도 안 쓰인다.
+create or replace function save_trip_plan(p jsonb) returns bigint
+language plpgsql as $$
+declare
+  v_id     bigint := nullif(p ->> 'id', '')::bigint;
+  v_tx     bigint := nullif(p ->> 'transaction_id', '')::bigint;
+  v_user   uuid   := auth.uid();
+  v_amount int    := coalesce((p ->> 'amount')::int, 0);
+  v_date   date   := (p ->> 'date')::date;
+  v_cat    bigint := nullif(p ->> 'category_id', '')::bigint;
+  v_memo   text   := coalesce(p ->> 'tx_memo', '');
+begin
+  -- 1) 가계부
+  if v_amount > 0 then
+    if v_tx is null then
+      insert into transactions (kind, amount, category_id, date, memo, created_by)
+      values ('expense', v_amount, v_cat, v_date, v_memo, v_user) returning id into v_tx;
+    else
+      update transactions set amount = v_amount, category_id = v_cat, date = v_date, memo = v_memo
+      where id = v_tx;
+      if not found then   -- 가계부에서 지워진 거래 → 새로 만들어 다시 연결한다
+        insert into transactions (kind, amount, category_id, date, memo, created_by)
+        values ('expense', v_amount, v_cat, v_date, v_memo, v_user) returning id into v_tx;
+      end if;
+    end if;
+  elsif v_tx is not null then
+    delete from transactions where id = v_tx;   -- 금액을 지웠다
+    v_tx := null;
+  end if;
+
+  -- 2) 일정
+  if v_id is null then
+    insert into trip_plans (trip_id, date, place, memo, amount, transaction_id, created_by)
+    values ((p ->> 'trip_id')::bigint, v_date, coalesce(p ->> 'place', ''), coalesce(p ->> 'memo', ''),
+            v_amount, v_tx, v_user)
+    returning id into v_id;
+  else
+    update trip_plans set date = v_date, place = coalesce(p ->> 'place', ''), memo = coalesce(p ->> 'memo', ''),
+           amount = v_amount, transaction_id = v_tx
+    where id = v_id;
+    if not found then   -- 상대가 지운 줄 → 새로 만든다
+      insert into trip_plans (trip_id, date, place, memo, amount, transaction_id, created_by)
+      values ((p ->> 'trip_id')::bigint, v_date, coalesce(p ->> 'place', ''), coalesce(p ->> 'memo', ''),
+              v_amount, v_tx, v_user)
+      returning id into v_id;
+    end if;
+  end if;
+  return v_id;
+end $$;
+
+-- 여행 지출이 들어갈 가계부 카테고리 (없을 때만 만든다)
+insert into categories (name, kind, sort_order)
+select '여행', 'expense', 95
+where not exists (select 1 from categories where kind = 'expense' and name = '여행');
 
 -- 20. 확인용 ---------------------------------------------------------------------
 
@@ -677,4 +790,5 @@ union all select 'meals', count(*) from meals
 union all select 'meal_buys', count(*) from meal_buys
 union all select 'visited_regions', count(*) from visited_regions
 union all select 'trips', count(*) from trips
-union all select 'trip_items', count(*) from trip_items;
+union all select 'trip_plans', count(*) from trip_plans
+union all select 'packing_items', count(*) from packing_items;

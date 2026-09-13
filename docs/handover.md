@@ -1,10 +1,10 @@
-# 우리집 — 인수인계 (2026-09-13 기준, v22)
+# 우리집 — 인수인계 (2026-09-13 기준, v23)
 
 두 사람(부부)이 쓰는 PWA. 배포: https://junhyeok2.vercel.app · 저장소: kwonjunhyeok9934/junhyeok2 (`main`에 바로 커밋)
 
 ## 구성
 - 화면: HTML/CSS/JS 모듈, 빌드 없음. `js/app.js`가 진입점, 탭별 모듈(`home/ledger/fixed/todo/schedule/meal/travel/trip`), 공용(`ui/calc/supabase/categories/push/weather/anniv`)
-- 데이터·로그인·실시간·푸시: Supabase (프로젝트 jfrmpmlbweyecwfwlesh). 표 13개, RLS "로그인 사용자 전체 읽기·쓰기", 자가 가입 OFF
+- 데이터·로그인·실시간·푸시: Supabase (프로젝트 jfrmpmlbweyecwfwlesh). 표 15개, RLS "로그인 사용자 전체 읽기·쓰기", 자가 가입 OFF
 - 호스팅: Vercel, `main` 푸시마다 자동 배포. `sw.js`는 network-first 캐시 — 파일 바꾸면 `CACHE` 버전과 `app.js`의 `APP_VERSION`을 같이 올린다(설정 맨 아래에 표시)
 - 알림: 웹 푸시. 발송은 Edge Function(대시보드 이름 `rapid-task`), DB 트리거(`notify_webhook`)가 호출. 설정 순서는 `docs/알림_설정.md`
 - 비밀값(VAPID 개인키, WEBHOOK_SECRET)은 저장소에 없다. Supabase Edge Function Secrets에만 있음
@@ -17,7 +17,7 @@
 - 홈: 히어로·기념일 D-day·날씨/미세먼지·오늘 일정·할일
 - 가계부 칸: 가계부(월/기간 조회, 월별 차트, 카테고리) · 식비(주간 식단, 누가·어디서 + '어떻게' 세트별 품목·가격) · 고정비(주인별, 카테고리 칩)
 - 일정 칸: 스케줄(월간 달력) · 할일(해야함/완료됨, 담당·마감)
-- 여행 칸: 지도(시군구 색칠·지역 시트) · 내 여행(여행 목록·상세·준비물)
+- 여행 칸: 지도(시군구 색칠·지역 시트) · 내 여행(여행 목록·상세·일차별 일정) · 준비물(공용 체크리스트)
 
 설정: 내 이름 · 기념일 · 알림 · 화면(테마) · 카테고리(지출/수입/고정비/식비 어디서·어떻게) · 로그아웃
 
@@ -60,15 +60,20 @@
   탭이 숨어 있으면 지도 크기를 못 재니 `ResizeObserver` 로 보이는 순간 다시 잡는다.
 - 여행 상세의 작은 지도(`miniMap`)는 그 여행 지역 언저리만 잘라 그린다. 지도 데이터의 `b`(경계 상자)로
   자를 곳을 정하고 근처 지역만 그려서 229개를 다 그리지 않는다.
-- 여행 하나 = `trips`(제목·기간·메모) + `trip_regions`(시군구 코드 여러 개) + `trip_items`(준비물).
+- 여행 하나 = `trips`(제목·기간·메모) + `trip_regions`(시군구 코드 여러 개).
   지도 색은 `visited_regions`(직접 칠함, 연한 색) ∪ `trip_regions`(여행 기록, 진한 색). 여행을 지우면 색도 따라 빠진다.
-- 여행 지출은 따로 표를 만들지 않았다. 여행 기간으로 `transactions` 를 더해 보여 주고,
-  '가계부에서 이 기간 보기' 는 `ledger.showRange(start, end)` 로 조회 기간을 바꾼 뒤 탭을 옮긴다.
-- 준비물은 `할일` 탭과 섞지 않으려고 `trip_items` 로 따로 뒀다.
+- **이름은 안 적어도 된다.** 비우면 `nextTripName(지역, 다녀온 횟수)` 로 "제주시 3" 처럼 짓는다. 시트 순서도 어디 → 언제 → 이름이다.
+- **준비물은 공용 한 벌**(`packing_items`, 여행 칸의 준비물 화면 = `js/packing.js`). 여행에서는 `trip_packed` 에
+  줄이 있으면 체크된 것 — 여행마다 목록을 새로 적지 않는다.
+- **일정은 `trip_plans`**. 하루에 여러 줄이고 "어디(place) + 얼마(amount)". 금액이 있으면 가계부 거래 하나와 1:1 로 붙는다
+  (식비 `meal_buys` 와 같은 방식). 쓰기는 `save_trip_plan(p jsonb)` RPC 한 번, 줄을 지우면 AFTER DELETE 트리거가 거래까지 지운다.
+  카테고리는 `expense/여행` (31번이 없으면 만든다).
+- '가계부에서 이 기간 보기' 는 `ledger.showRange(start, end)` 로 조회 기간을 바꾼 뒤 탭을 옮긴다.
+- 시트(z-index 35)는 오버레이(여행 상세·설정, 30) 위에 뜬다. 여행 상세에서 일정 시트를 열기 때문 — 낮추면 시트가 안 보인다.
 - 칠한 곳은 `visited_regions` 에 `code` 한 줄. 지우면 색만 빠진다. `code` 는 지도 데이터의 `c` 와 같은 값이라 지도를 다시 만들면 맞춰 옮겨야 한다(그래서 `name` 도 같이 저장한다).
 - 확대·이동은 `<g id="map-layer">` 의 transform 하나로 끝낸다. 손가락은 **움직이기 시작할 때만** 붙잡는다(`setPointerCapture`) —
   처음부터 붙잡으면 지도 위 ＋/− 버튼의 클릭이 지도로 끌려가 버튼이 죽는다(한 번 겪은 버그).
-- 실시간 구독은 `travel-changes` 채널로 따로 뒀다(visited_regions·trips·trip_regions·trip_items). 아직 27·29번 SQL 을 안 돌린 상태에서도 나머지 구독이 멀쩡하도록.
+- 실시간 구독은 `travel-changes` 채널로 따로 뒀다(visited_regions·trips·trip_regions·trip_plans·trip_packed·packing_items). 아직 27·29·31번 SQL 을 안 돌린 상태에서도 나머지 구독이 멀쩡하도록.
 
 ## 남은 아이디어
-지출 검색 · 스케줄 반복 · 가계부 CSV 내보내기 · 연간 보기 · 홈 히어로 배경 사진 · 최근 기록 3개 · 여행 탭(일차별 일정·사진, 세계 지도, 홈에 다가오는 여행 D-day 카드, 여행 지출을 거래에 직접 묶기, 여행 만들면 상대에게 알림)
+지출 검색 · 스케줄 반복 · 가계부 CSV 내보내기 · 연간 보기 · 홈 히어로 배경 사진 · 최근 기록 3개 · 여행 탭(일정에 사진·시간, 세계 지도, 홈에 다가오는 여행 D-day 카드, 여행 지출을 거래에 직접 묶기, 여행 만들면 상대에게 알림)

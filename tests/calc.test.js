@@ -10,6 +10,7 @@ import {
   buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyLineText,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
+  nextTripName, tripDates, groupPlansByDate, sumPlans,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -636,4 +637,38 @@ test('tripsByRegion: 지역별로 묶고 최근 순', () => {
 
 test('tripsByRegion: 지역이 없는 여행은 건너뛴다', () => {
   assert.equal(tripsByRegion([{ id: 9, start_date: '2026-01-01' }]).size, 0);
+});
+
+test('nextTripName: 이름을 안 적으면 어디로 짓는다', () => {
+  assert.equal(nextTripName('제주시', 0), '제주시');
+  assert.equal(nextTripName('제주시', 2), '제주시 3');
+  assert.equal(nextTripName(' 강릉시 ', 1), '강릉시 2');
+  assert.equal(nextTripName('', 3), '여행');
+  assert.equal(nextTripName(null), '여행');
+});
+
+test('tripDates: 기간의 날짜들', () => {
+  assert.deepEqual(tripDates('2026-09-13', '2026-09-15'), ['2026-09-13', '2026-09-14', '2026-09-15']);
+  assert.deepEqual(tripDates('2026-09-13', '2026-09-13'), ['2026-09-13']);
+  assert.deepEqual(tripDates('2026-12-31', '2027-01-01'), ['2026-12-31', '2027-01-01']);
+});
+
+const plans = [
+  { id: 1, date: '2026-09-14', place: '성산일출봉', amount: 5000, created_at: '2026-09-14T01:00:00Z' },
+  { id: 2, date: '2026-09-13', place: '공항', amount: 0, created_at: '2026-09-13T01:00:00Z' },
+  { id: 3, date: '2026-09-13', place: '점심', amount: 24000, created_at: '2026-09-13T02:00:00Z' },
+  { id: 4, date: '2026-10-01', place: '기간 밖', amount: 1000, created_at: '2026-09-13T00:30:00Z' },
+];
+
+test('groupPlansByDate: 일차별로 묶고 적은 순서대로', () => {
+  const map = groupPlansByDate(plans, tripDates('2026-09-13', '2026-09-15'));
+  assert.deepEqual([...map.keys()], ['2026-09-13', '2026-09-14', '2026-09-15']);
+  assert.deepEqual(map.get('2026-09-13').map((p) => p.id), [4, 2, 3]); // 기간 밖은 첫날로
+  assert.deepEqual(map.get('2026-09-14').map((p) => p.id), [1]);
+  assert.deepEqual(map.get('2026-09-15'), []);
+});
+
+test('sumPlans: 쓴 돈 합계', () => {
+  assert.equal(sumPlans(plans), 30000);
+  assert.equal(sumPlans([]), 0);
 });
