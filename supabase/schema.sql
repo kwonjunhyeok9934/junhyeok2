@@ -813,7 +813,7 @@ select * from (values
   ('티켓',     'trip', 30),
   ('교통',     'trip', 40),
   ('주유비',   'trip', 50),
-  ('비행기',   'trip', 60),
+  ('비행기값', 'trip', 60),
   ('쇼핑',     'trip', 70),
   ('기타',     'trip', 80)
 ) as v(name, kind, sort_order)
@@ -1011,6 +1011,9 @@ end $$;
 -- '여행 준비' 칸을 따로 둔다. 날짜(date)는 결제한 날이고, 가계부에도 그 날짜로 들어간다.
 
 alter table trip_plans add column if not exists prep boolean not null default false;
+
+-- 33번에서 '비행기' 로 넣었던 분류 이름을 '비행기값' 으로 (주유비·숙소비와 결을 맞춘다).
+update categories set name = '비행기값' where kind = 'trip' and name = '비행기';
 
 -- 일정 한 줄 저장 (35번과 같고, '여행 준비' 표시만 더 받는다).
 --   prep = true 면 1일째·2일째 밑이 아니라 '여행 준비' 칸에 들어간다. date 는 결제한 날.

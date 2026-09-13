@@ -60,6 +60,7 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 | `js/ui.js` | 시트·토스트 등 공용 조각 |
 | `sw.js` `manifest.webmanifest` `icons/` | PWA 설치 |
 | `supabase/schema.sql` | DB 표·권한·실시간·기본 카테고리 |
+| `supabase/check.sql` | 잘 깔렸는지 보는 쪽지 (표·열·함수 확인) |
 | `.github/workflows/supabase-keepalive.yml` | Supabase 자동 일시정지 막는 하루 한 번 핑 |
 | `tools/build_korea_map.py` | 지도 데이터를 다시 만드는 스크립트 (평소엔 실행할 일 없음) |
 
@@ -97,6 +98,7 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 **여행 탭을 처음 쓸 때 한 번**: Supabase SQL Editor 에 `supabase/schema.sql` **전체**를 실행한다
 (27·29·31·33·35·37번이 여행 몫). 잘라서 붙이지 말고 파일을 통째로 붙여 **Run** 한 번이면 된다 —
 여러 번 실행해도 안전하게 써 놨다. 덜 실행됐으면 여행·준비물 화면이 "schema.sql 전체를 한 번 실행해 주세요" 라고 알려 준다.
+잘 깔렸는지 보고 싶으면 `supabase/check.sql` 을 붙여 실행한다 — 표·열·함수가 '있음' 인지 한눈에 나온다.
 
 식비 탭은 한 주(월~일)의 아침·점심·저녁·야식을 적는다. 한 끼는 날짜·끼니·메뉴·누가·어디서를
 하나씩 갖고, 그 아래 **'어떻게' 세트**(마트·컬리·배달…)를 여러 개 달 수 있다. 세트마다 산 품목과
