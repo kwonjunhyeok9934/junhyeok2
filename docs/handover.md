@@ -1,4 +1,4 @@
-# 우리집 — 인수인계 (2026-09-13 기준, v20)
+# 우리집 — 인수인계 (2026-09-13 기준, v21)
 
 두 사람(부부)이 쓰는 PWA. 배포: https://junhyeok2.vercel.app · 저장소: kwonjunhyeok9934/junhyeok2 (`main`에 바로 커밋)
 
