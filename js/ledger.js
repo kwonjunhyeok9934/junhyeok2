@@ -180,6 +180,15 @@ function openRangeSheet() {
   openSheet(el.rangeSheet);
 }
 
+// 바깥(여행 상세)에서 "이 기간 가계부" 를 열 때.
+export function showRange(start, end) {
+  state.span = 'custom';
+  state.customStart = start;
+  state.customEnd = end;
+  saveSpan();
+  refresh();
+}
+
 export async function refresh() {
   const { start, end } = currentRange();
   const custom = state.span === 'custom';

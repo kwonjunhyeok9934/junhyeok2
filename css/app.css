@@ -485,7 +485,9 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
   fill: var(--line); stroke: var(--card); stroke-width: 1.4; vector-effect: non-scaling-stroke;
   cursor: pointer; transition: fill .25s;
 }
-#map-layer path.on { fill: var(--accent); }
+/* 직접 칠한 곳은 연하게, 여행 기록이 있는 곳은 진하게 */
+#map-layer path.been { fill: color-mix(in srgb, var(--accent) 42%, var(--line)); }
+#map-layer path.trip { fill: var(--accent); }
 .map-tools {
   position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 2px;
   background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--line);
@@ -499,3 +501,43 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 #travel-sido-list .num { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; width: 46px; text-align: right; }
 .mini-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--bg); overflow: hidden; }
 .mini-bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+
+/* ---- 여행 계획 ---- */
+.legend { display: flex; gap: 14px; justify-content: center; margin: -4px 0 12px; color: var(--muted); font-size: 12px; }
+.legend span { display: flex; align-items: center; gap: 5px; }
+.legend .sw { width: 11px; height: 11px; border-radius: 3px; display: block; }
+.legend .sw.trip { background: var(--accent); }
+.legend .sw.been { background: color-mix(in srgb, var(--accent) 42%, var(--line)); }
+
+.trip-card { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px; cursor: pointer;
+  animation: riseIn .35s var(--spring) both; animation-delay: calc(var(--i, 0) * 35ms); }
+.trip-card:active { background: var(--accent-soft); }
+.trip-card.small { padding: 12px 14px; }
+.trip-main { flex: 1; min-width: 0; }
+.trip-title { font-weight: 700; letter-spacing: -.02em; }
+.trip-where { color: var(--text-2); font-size: 13px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-when { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.trip-dday { flex: none; padding-top: 2px; font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.trip-dday.upcoming { color: var(--accent); }
+.trip-dday.ongoing { color: #db2777; }
+.trip-dday.big { padding-top: 0; font-size: 26px; font-weight: 800; letter-spacing: -.03em; margin-bottom: 4px; }
+
+#sheet-region .sheet-panel { display: flex; flex-direction: column; gap: 12px; }
+.region-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.region-head h2 { font-size: 20px; color: var(--text); font-weight: 700; margin: 0; letter-spacing: -.02em; }
+#region-trips { max-height: 40vh; overflow-y: auto; }
+#region-trips .list-head { margin-top: 6px; }
+
+.trip-head .trip-when { font-size: 14px; color: var(--text-2); }
+.chips.read { margin-top: 10px; }
+.chips.read .chip { background: var(--bg); color: var(--text-2); cursor: default; }
+.trip-memo { margin: 10px 0 0; color: var(--text-2); white-space: pre-wrap; }
+.chip small { color: var(--muted); font-weight: 400; margin-left: 3px; }
+#trip-region-results { max-height: 30vh; overflow-y: auto; }
+.item-row { margin-bottom: 6px; box-shadow: none; background: var(--bg); }
+.item-row:last-child { margin-bottom: 0; }
+.item-row .icon-btn.del { color: var(--muted); font-size: 14px; }
+.item-list { margin-top: 10px; }
+.trip-spend { display: flex; align-items: baseline; gap: 4px; }
+.trip-spend strong { font-size: 24px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.trip-spend span { color: var(--muted); font-size: 14px; }

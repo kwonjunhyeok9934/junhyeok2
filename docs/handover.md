@@ -1,10 +1,10 @@
-# 우리집 — 인수인계 (2026-09-13 기준, v18)
+# 우리집 — 인수인계 (2026-09-13 기준, v19)
 
 두 사람(부부)이 쓰는 PWA. 배포: https://junhyeok2.vercel.app · 저장소: kwonjunhyeok9934/junhyeok2 (`main`에 바로 커밋)
 
 ## 구성
-- 화면: HTML/CSS/JS 모듈, 빌드 없음. `js/app.js`가 진입점, 탭별 모듈(`home/ledger/fixed/todo/schedule/meal/travel`), 공용(`ui/calc/supabase/categories/push/weather/anniv`)
-- 데이터·로그인·실시간·푸시: Supabase (프로젝트 jfrmpmlbweyecwfwlesh). 표 10개, RLS "로그인 사용자 전체 읽기·쓰기", 자가 가입 OFF
+- 화면: HTML/CSS/JS 모듈, 빌드 없음. `js/app.js`가 진입점, 탭별 모듈(`home/ledger/fixed/todo/schedule/meal/travel/trip`), 공용(`ui/calc/supabase/categories/push/weather/anniv`)
+- 데이터·로그인·실시간·푸시: Supabase (프로젝트 jfrmpmlbweyecwfwlesh). 표 13개, RLS "로그인 사용자 전체 읽기·쓰기", 자가 가입 OFF
 - 호스팅: Vercel, `main` 푸시마다 자동 배포. `sw.js`는 network-first 캐시 — 파일 바꾸면 `CACHE` 버전과 `app.js`의 `APP_VERSION`을 같이 올린다(설정 맨 아래에 표시)
 - 알림: 웹 푸시. 발송은 Edge Function(대시보드 이름 `rapid-task`), DB 트리거(`notify_webhook`)가 호출. 설정 순서는 `docs/알림_설정.md`
 - 비밀값(VAPID 개인키, WEBHOOK_SECRET)은 저장소에 없다. Supabase Edge Function Secrets에만 있음
@@ -17,7 +17,7 @@
 - 홈: 히어로·기념일 D-day·날씨/미세먼지·오늘 일정·할일
 - 가계부 칸: 가계부(월/기간 조회, 월별 차트, 카테고리) · 식비(주간 식단, 금액은 가계부와 자동 연동) · 고정비(주인별, 카테고리 칩)
 - 일정 칸: 스케줄(월간 달력) · 할일(해야함/완료됨, 담당·마감)
-- 여행: 전국 229개 시군구 지도에서 다녀온 곳 색칠
+- 여행 칸: 지도(시군구 색칠·지역 시트) · 내 여행(여행 목록·상세·준비물)
 
 설정: 내 이름 · 기념일 · 알림 · 화면(테마) · 카테고리(지출/수입/고정비/식비) · 로그아웃
 
@@ -36,10 +36,18 @@
 
 ## 여행 탭 메모
 - 지도는 `js/koreamap.js` (자동 생성 149KB). 만드는 방법과 원칙은 `docs/지도_데이터.md`. 손으로 고치지 않는다.
+- 화면이 둘이다. `travel.js` = 지도 + 지역 시트, `trip.js` = 내 여행 목록·상세·만들기.
+  `travel.js` 가 `trip.js` 를 가져다 쓰고(지역 시트에 여행 목록·만들기 버튼), 반대 방향은 없다 —
+  여행이 바뀌면 `app.js` 가 `trip.init({ onChange })` 로 받아 `travel.render()` 를 부른다. 순환 import 를 피하려고 이렇게 뒀다.
+- 여행 하나 = `trips`(제목·기간·메모) + `trip_regions`(시군구 코드 여러 개) + `trip_items`(준비물).
+  지도 색은 `visited_regions`(직접 칠함, 연한 색) ∪ `trip_regions`(여행 기록, 진한 색). 여행을 지우면 색도 따라 빠진다.
+- 여행 지출은 따로 표를 만들지 않았다. 여행 기간으로 `transactions` 를 더해 보여 주고,
+  '가계부에서 이 기간 보기' 는 `ledger.showRange(start, end)` 로 조회 기간을 바꾼 뒤 탭을 옮긴다.
+- 준비물은 `할일` 탭과 섞지 않으려고 `trip_items` 로 따로 뒀다.
 - 칠한 곳은 `visited_regions` 에 `code` 한 줄. 지우면 색만 빠진다. `code` 는 지도 데이터의 `c` 와 같은 값이라 지도를 다시 만들면 맞춰 옮겨야 한다(그래서 `name` 도 같이 저장한다).
 - 확대·이동은 `<g id="map-layer">` 의 transform 하나로 끝낸다. 손가락은 **움직이기 시작할 때만** 붙잡는다(`setPointerCapture`) —
   처음부터 붙잡으면 지도 위 ＋/− 버튼의 클릭이 지도로 끌려가 버튼이 죽는다(한 번 겪은 버그).
-- 실시간 구독은 `travel-changes` 채널로 따로 뒀다. 아직 23번 SQL 을 안 돌린 상태에서도 나머지 구독이 멀쩡하도록.
+- 실시간 구독은 `travel-changes` 채널로 따로 뒀다(visited_regions·trips·trip_regions·trip_items). 아직 23·25번 SQL 을 안 돌린 상태에서도 나머지 구독이 멀쩡하도록.
 
 ## 남은 아이디어
-지출 검색 · 스케줄 반복 · 가계부 CSV 내보내기 · 연간 보기 · 홈 히어로 배경 사진 · 최근 기록 3개 · 여행 탭(세계 지도, 지역별 메모·사진, 홈에 다녀온 곳 카드)
+지출 검색 · 스케줄 반복 · 가계부 CSV 내보내기 · 연간 보기 · 홈 히어로 배경 사진 · 최근 기록 3개 · 여행 탭(일차별 일정·사진, 세계 지도, 홈에 다가오는 여행 D-day 카드, 여행 지출을 거래에 직접 묶기, 여행 만들면 상대에게 알림)

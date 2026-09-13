@@ -337,6 +337,63 @@ begin
   end if;
 end $$;
 
+-- 25. 여행 (계획·기록) ---------------------------------------------------------
+-- 여행 하나 = 제목 + 기간 + 지역 여러 개(제주 여행이면 제주시·서귀포시).
+-- 지도 색칠은 여기서 자동으로 따라간다 — 직접 칠한 곳은 visited_regions 에 그대로 있고,
+-- 지도는 둘을 합쳐 보여준다.
+-- 여행 중에 쓴 돈은 따로 적지 않는다. 가계부에서 그 기간을 더해 보여 준다.
+
+create table if not exists trips (
+  id         bigint generated always as identity primary key,
+  title      text not null,
+  start_date date not null,
+  end_date   date not null,
+  memo       text not null default '',
+  created_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists trips_start_idx on trips (start_date);
+
+create table if not exists trip_regions (
+  trip_id bigint not null references trips(id) on delete cascade,
+  code    text not null,                  -- 시군구 코드 (js/koreamap.js 의 c)
+  name    text not null default '',       -- 고를 때의 이름
+  primary key (trip_id, code)
+);
+
+-- 준비물 체크리스트. 할일 탭과 섞이면 지저분해서 여행 안에만 둔다.
+create table if not exists trip_items (
+  id         bigint generated always as identity primary key,
+  trip_id    bigint not null references trips(id) on delete cascade,
+  title      text not null,
+  done       boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists trip_items_trip_idx on trip_items (trip_id);
+
+alter table trips        enable row level security;
+alter table trip_regions enable row level security;
+alter table trip_items   enable row level security;
+drop policy if exists "auth all" on trips;
+drop policy if exists "auth all" on trip_regions;
+drop policy if exists "auth all" on trip_items;
+create policy "auth all" on trips        for all to authenticated using (true) with check (true);
+create policy "auth all" on trip_regions for all to authenticated using (true) with check (true);
+create policy "auth all" on trip_items   for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'trips') then
+    alter publication supabase_realtime add table trips;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'trip_regions') then
+    alter publication supabase_realtime add table trip_regions;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'trip_items') then
+    alter publication supabase_realtime add table trip_items;
+  end if;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
@@ -348,4 +405,6 @@ union all select 'fixed_costs', count(*) from fixed_costs
 union all select 'push_subscriptions', count(*) from push_subscriptions
 union all select 'anniversaries', count(*) from anniversaries
 union all select 'meals', count(*) from meals
-union all select 'visited_regions', count(*) from visited_regions;
+union all select 'visited_regions', count(*) from visited_regions
+union all select 'trips', count(*) from trips
+union all select 'trip_items', count(*) from trip_items;

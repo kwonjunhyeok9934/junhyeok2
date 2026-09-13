@@ -10,8 +10,9 @@ import * as push from './push.js';
 import * as anniv from './anniv.js';
 import * as meal from './meal.js';
 import * as travel from './travel.js';
+import * as trip from './trip.js';
 
-const APP_VERSION = 'v18'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v19'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -20,6 +21,7 @@ const view = {
   main: $('#view-main'),
   settings: $('#view-settings'),
 };
+const overlayTrip = $('#view-trip');
 
 // 화면(탭) 하나하나. 주소의 # 이름이 그대로 키다 — 알림 딥링크(#ledger …)가 계속 열려야 한다.
 const TABS = {
@@ -29,7 +31,8 @@ const TABS = {
   fixed: { title: '고정비', el: $('#tab-fixed'), group: 'money' },
   schedule: { title: '스케줄', el: $('#tab-schedule'), group: 'plan' },
   todo: { title: '할일', el: $('#tab-todo'), group: 'plan' },
-  travel: { title: '여행', el: $('#tab-travel'), group: 'travel' },
+  travel: { title: '지도', el: $('#tab-travel'), group: 'travel' },
+  trips: { title: '내 여행', el: $('#tab-trips'), group: 'travel' },
 };
 
 // 아래 탭바 네 칸. 한 칸 안의 화면은 위쪽 작은 탭으로 옮겨 다닌다.
@@ -37,7 +40,7 @@ const GROUPS = {
   home: ['home'],
   money: ['ledger', 'meal', 'fixed'],
   plan: ['schedule', 'todo'],
-  travel: ['travel'],
+  travel: ['travel', 'trips'],
 };
 
 // 탭바를 다시 누르면 그 칸에서 마지막으로 보던 화면으로 돌아간다.
@@ -145,6 +148,11 @@ function enterMain(user) {
   fixed.init();
   meal.init({ userId: user.id, onTxChange: () => { ledger.refresh(); home.refresh(); } });
   travel.init({ userId: user.id });
+  trip.init({
+    userId: user.id,
+    onChange: () => travel.render(),                                   // 여행이 바뀌면 지도도 다시 칠한다
+    onShowRange: (start, end) => { ledger.showRange(start, end); goTab('ledger'); },
+  });
   home.init({ onGo: goTab });
   routeHash();
   refreshAll();
@@ -167,6 +175,7 @@ function refreshAll() {
   fixed.refresh();
   meal.refresh();
   travel.refresh();
+  trip.refresh();
 }
 
 function onVisible() {
@@ -190,6 +199,9 @@ function subscribeRealtime() {
   const travelCh = sb
     .channel('travel-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'visited_regions' }, () => travel.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, () => trip.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_regions' }, () => trip.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_items' }, () => trip.refresh())
     .subscribe();
   channels = [main, travelCh];
 }
@@ -215,6 +227,7 @@ function bindTabs() {
     if (tab === 'schedule') schedule.openNew();
     else if (tab === 'fixed') fixed.openNew();
     else if (tab === 'meal') meal.openNew();
+    else if (tab === 'trips') trip.openNew();
     else ledger.openNew(); // 홈·가계부는 지출 입력
   });
 }
@@ -295,9 +308,13 @@ function setupBackGuard() {
       history.pushState({ guard: true }, '', tabHash);
       return;
     }
-    if (!view.settings.hidden) {
-      view.settings.hidden = true;
-      ledger.refresh();
+    const overlay = document.querySelector('.overlay:not([hidden])');
+    if (overlay) {
+      if (overlay === overlayTrip) trip.closeDetail();
+      else {
+        overlay.hidden = true;
+        ledger.refresh();
+      }
       history.pushState({ guard: true }, '', tabHash);
       return;
     }

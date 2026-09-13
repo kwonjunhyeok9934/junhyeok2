@@ -7,7 +7,7 @@ import {
   calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
   dayName, dayLabel, weekStart, weekDays, weekLabel, slotOfHour, mealMemo, resolveMealCategoryId,
   mealAmount, groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByCategory, planMealSave, planMealDelete,
-  visitedStats,
+  visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -368,4 +368,74 @@ test('visitedStats: 지도에 없는 코드는 세지 않는다', () => {
 
 test('visitedStats: 지역이 없으면 0%', () => {
   assert.deepEqual(visitedStats([], new Set(['11010'])), { done: 0, total: 0, percent: 0, sido: [] });
+});
+
+// ---- 여행 계획 --------------------------------------------------------------
+
+test('dayDiff: 날짜 사이 일수', () => {
+  assert.equal(dayDiff('2026-10-03', '2026-10-05'), 2);
+  assert.equal(dayDiff('2026-10-03', '2026-10-03'), 0);
+  assert.equal(dayDiff('2026-12-30', '2027-01-02'), 3);
+  assert.equal(dayDiff('2026-10-05', '2026-10-03'), -2);
+});
+
+test('tripNights: 박/일', () => {
+  assert.deepEqual(tripNights('2026-10-03', '2026-10-05'), { nights: 2, days: 3 });
+  assert.deepEqual(tripNights('2026-10-03', '2026-10-03'), { nights: 0, days: 1 });
+});
+
+test('tripLabel: 기간 표시', () => {
+  assert.equal(tripLabel('2026-10-03', '2026-10-05'), '2026년 10월 3일 ~ 5일 · 2박 3일');
+  assert.equal(tripLabel('2026-10-30', '2026-11-02'), '2026년 10월 30일 ~ 11월 2일 · 3박 4일');
+  assert.equal(tripLabel('2026-12-30', '2027-01-02'), '2026년 12월 30일 ~ 2027년 1월 2일 · 3박 4일');
+  assert.equal(tripLabel('2026-10-03', '2026-10-03'), '2026년 10월 3일 · 당일치기');
+});
+
+test('tripStatus: 다가오는 여행', () => {
+  const t = { start_date: '2026-10-03', end_date: '2026-10-05' };
+  assert.deepEqual(tripStatus(t, '2026-09-21'), { state: 'upcoming', days: 12, text: 'D-12' });
+  assert.deepEqual(tripStatus(t, '2026-10-02'), { state: 'upcoming', days: 1, text: 'D-1' });
+});
+
+test('tripStatus: 여행 중 (시작·끝 당일 포함)', () => {
+  const t = { start_date: '2026-10-03', end_date: '2026-10-05' };
+  assert.equal(tripStatus(t, '2026-10-03').text, '여행 중 · 1일째');
+  assert.equal(tripStatus(t, '2026-10-05').text, '여행 중 · 3일째');
+  assert.equal(tripStatus(t, '2026-10-04').state, 'ongoing');
+});
+
+test('tripStatus: 지난 여행', () => {
+  const t = { start_date: '2026-10-03', end_date: '2026-10-05' };
+  assert.deepEqual(tripStatus(t, '2026-10-06'), { state: 'past', days: 1, text: '어제' });
+  assert.equal(tripStatus(t, '2026-10-15').text, '10일 전');
+});
+
+const trips = [
+  { id: 1, title: '지난 제주', start_date: '2026-05-01', end_date: '2026-05-03', regions: [{ code: '39010' }, { code: '39020' }] },
+  { id: 2, title: '이번 강릉', start_date: '2026-09-12', end_date: '2026-09-14', regions: [{ code: '32030' }] },
+  { id: 3, title: '가을 경주', start_date: '2026-10-03', end_date: '2026-10-05', regions: [{ code: '37020' }] },
+  { id: 4, title: '작년 제주', start_date: '2025-05-01', end_date: '2025-05-03', regions: [{ code: '39010' }] },
+];
+
+test('sortTrips: 다가오는 여행은 가까운 순, 지난 여행은 최근 순', () => {
+  const { upcoming, past } = sortTrips(trips, '2026-09-13'); // 강릉은 여행 중
+  assert.deepEqual(upcoming.map((t) => t.id), [2, 3]);
+  assert.deepEqual(past.map((t) => t.id), [1, 4]);
+});
+
+test('sortTrips: 끝난 날 당일은 아직 지난 여행이 아니다', () => {
+  const { upcoming, past } = sortTrips([trips[1]], '2026-09-14');
+  assert.equal(upcoming.length, 1);
+  assert.equal(past.length, 0);
+});
+
+test('tripsByRegion: 지역별로 묶고 최근 순', () => {
+  const map = tripsByRegion(trips);
+  assert.deepEqual(map.get('39010').map((t) => t.id), [1, 4]);
+  assert.deepEqual(map.get('39020').map((t) => t.id), [1]);
+  assert.equal(map.has('11010'), false);
+});
+
+test('tripsByRegion: 지역이 없는 여행은 건너뛴다', () => {
+  assert.equal(tripsByRegion([{ id: 9, start_date: '2026-01-01' }]).size, 0);
 });

@@ -1,11 +1,14 @@
-// 여행 탭: 다녀온 시·군·구를 지도에서 색칠한다.
-// 지도는 js/koreamap.js (자동 생성). 다녀온 곳은 visited_regions 표에 코드 한 줄로 남는다.
+// 여행 칸의 지도 화면: 다녀온 시·군·구를 색칠하고, 지역을 누르면 그 지역 여행을 보여 준다.
+// 지도는 js/koreamap.js (자동 생성). 색은 두 가지에서 온다 —
+//   여행 기록이 있는 지역(trip.js) + 직접 칠한 지역(visited_regions).
 import { sb } from './supabase.js';
-import { $, escapeHtml, toast, haptic, animateNumber } from './ui.js';
+import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, haptic, animateNumber } from './ui.js';
 import { VIEWBOX, REGIONS, SIDO_ORDER } from './koreamap.js';
-import { visitedStats } from './calc.js';
+import { visitedStats, tripLabel } from './calc.js';
+import * as trip from './trip.js';
 
 const NAME = new Map(REGIONS.map((r) => [r.c, r.n]));
+const SIDO = new Map(REGIONS.map((r) => [r.c, r.s]));
 const [, , VBW, VBH] = VIEWBOX.split(' ').map(Number);
 const MAX_ZOOM = 14;
 
@@ -13,6 +16,7 @@ const state = {
   visited: new Set(),
   userId: null,
   pending: new Set(), // 저장 중인 코드 (연타 방지)
+  region: null,       // 시트에 열어 둔 지역
 };
 
 // 지도 확대·이동 상태. translate 뒤 scale 순서로 <g> 에 건다.
@@ -38,6 +42,12 @@ export function init({ userId }) {
     sido: $('#travel-sido'),
     sidoList: $('#travel-sido-list'),
     notice: $('#travel-notice'),
+    sheet: $('#sheet-region'),
+    name: $('#region-name'),
+    sidoName: $('#region-sido'),
+    been: $('#region-been'),
+    trips: $('#region-trips'),
+    newTrip: $('#region-new-trip'),
   };
 
   el.svg.setAttribute('viewBox', VIEWBOX);
@@ -46,11 +56,28 @@ export function init({ userId }) {
   ).join('');
 
   bindGestures();
+  bindSheetBackdrop(el.sheet);
   $('#map-zoom-in').addEventListener('click', () => zoomBy(1.6));
   $('#map-zoom-out').addEventListener('click', () => zoomBy(1 / 1.6));
   $('#map-reset').addEventListener('click', resetView);
   el.tab.addEventListener('click', (e) => {
     if (e.target.closest('[data-retry]')) refresh();
+  });
+
+  el.been.addEventListener('click', () => {
+    const code = state.region;
+    closeSheet(el.sheet);
+    toggleVisited(code);
+  });
+  el.newTrip.addEventListener('click', () => {
+    closeSheet(el.sheet);
+    trip.openNew(state.region);
+  });
+  el.trips.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-trip]');
+    if (!row) return;
+    closeSheet(el.sheet);
+    trip.openTrip(Number(row.dataset.trip));
   });
 }
 
@@ -74,14 +101,14 @@ export async function refresh() {
     el.wrap.hidden = true;
     el.notice.hidden = false;
     el.notice.innerHTML = missingTable(err)
-      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 23번 섹션을 실행해 주세요.</p>`
+      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 23·25번 섹션을 실행해 주세요.</p>`
       : `<div class="retry">불러오지 못했어요<br>
           <button type="button" class="btn small" data-retry>다시 시도</button>
         </div>`;
   }
 }
 
-// 아직 SQL 을 실행하지 않아 visited_regions 표가 없는 상태인지.
+// 아직 SQL 을 실행하지 않아 표가 없는 상태인지.
 function missingTable(err) {
   const m = `${err?.message ?? ''} ${err?.code ?? ''}`;
   return /does not exist|could not find the table|42P01|PGRST205/i.test(m);
@@ -89,15 +116,22 @@ function missingTable(err) {
 
 // ---- 렌더 ------------------------------------------------------------------
 
-function render() {
+// 여행이 바뀌었을 때 app.js 가 부른다 (지도만 다시 칠한다).
+export function render() {
+  if (!initialized) return;
+  const trips = trip.regionCodes();
   for (const path of el.layer.children) {
-    path.classList.toggle('on', state.visited.has(path.dataset.c));
+    const code = path.dataset.c;
+    path.classList.toggle('been', state.visited.has(code));
+    path.classList.toggle('trip', trips.has(code));
   }
-  renderSummary();
+  renderSummary(trips);
+  if (state.region && el.sheet.classList.contains('open')) renderRegionSheet();
 }
 
-function renderSummary() {
-  const stat = visitedStats(REGIONS, state.visited, SIDO_ORDER);
+function renderSummary(trips) {
+  const all = new Set([...state.visited, ...trips]);
+  const stat = visitedStats(REGIONS, all, SIDO_ORDER);
   animateNumber(el.done, stat.done, (n) => String(n));
   el.total.textContent = `/ ${stat.total}곳 · ${stat.percent}%`;
   el.bar.style.width = `${stat.percent}%`;
@@ -116,19 +150,52 @@ function renderSummary() {
     .join('');
 }
 
+// ---- 지역 시트 --------------------------------------------------------------
+
+function openRegionSheet(code) {
+  state.region = code;
+  renderRegionSheet();
+  openSheet(el.sheet);
+  haptic(5);
+}
+
+function renderRegionSheet() {
+  const code = state.region;
+  const trips = trip.tripsIn(code);
+  const been = state.visited.has(code);
+
+  el.name.textContent = NAME.get(code) ?? '';
+  el.sidoName.textContent = SIDO.get(code) ?? '';
+  el.been.textContent = been ? '다녀온 곳에서 빼기' : '다녀온 곳으로 표시';
+  el.been.classList.toggle('primary', !been);
+
+  el.trips.innerHTML = trips.length
+    ? `<h2 class="list-head">여행 <span class="count">${trips.length}</span></h2>` +
+      trips
+        .map(
+          (t, i) => `
+        <div class="card trip-card small" data-trip="${t.id}" style="--i:${Math.min(i, 12)}">
+          <div class="trip-main">
+            <div class="trip-title">${escapeHtml(t.title)}</div>
+            <div class="trip-when">${tripLabel(t.start_date, t.end_date)}</div>
+          </div>
+        </div>`,
+        )
+        .join('')
+    : '<p class="hint">이 지역 여행 기록이 아직 없어요</p>';
+}
+
 // ---- 색칠 ------------------------------------------------------------------
 
-async function toggle(code) {
+async function toggleVisited(code) {
   if (state.pending.has(code)) return;
-  const path = el.layer.querySelector(`path[data-c="${code}"]`);
   const on = !state.visited.has(code);
 
   // 먼저 칠하고 저장한다. 실패하면 되돌린다.
   state.pending.add(code);
   if (on) state.visited.add(code);
   else state.visited.delete(code);
-  path?.classList.toggle('on', on);
-  renderSummary();
+  render();
   haptic(on ? 15 : 5);
 
   try {
@@ -139,8 +206,7 @@ async function toggle(code) {
     console.error(err);
     if (on) state.visited.delete(code);
     else state.visited.add(code);
-    path?.classList.toggle('on', !on);
-    renderSummary();
+    render();
     toast(missingTable(err) ? '여행 표가 아직 없어요. schema.sql 23번을 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
   } finally {
     state.pending.delete(code);
@@ -190,7 +256,7 @@ function bindGestures() {
   const pointers = new Map();
   let last = null;   // 한 손가락: 직전 위치
   let pinch = null;  // 두 손가락: { dist, k, p }
-  let tap = null;    // 누른 자리·시각 (움직이지 않았으면 색칠)
+  let tap = null;    // 누른 자리·시각 (움직이지 않았으면 지역 열기)
 
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const two = () => [...pointers.values()];
@@ -254,7 +320,7 @@ function bindGestures() {
       last = null;
       if (tap && Date.now() - tap.t < 600) {
         const hit = document.elementFromPoint(tap.x, tap.y)?.closest('path[data-c]');
-        if (hit) toggle(hit.dataset.c);
+        if (hit) openRegionSheet(hit.dataset.c);
       }
       tap = null;
     }

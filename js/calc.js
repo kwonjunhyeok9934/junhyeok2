@@ -395,3 +395,65 @@ export function visitedStats(regions, visited, order = []) {
   const total = regions.length;
   return { done, total, percent: total ? Math.round((done / total) * 100) : 0, sido };
 }
+
+// ---- 여행 계획 --------------------------------------------------------------
+
+// 두 날짜 사이 일수 (b - a). 같은 날이면 0.
+export function dayDiff(a, b) {
+  return Math.round((Date.parse(`${b}T00:00:00`) - Date.parse(`${a}T00:00:00`)) / 86400000);
+}
+
+// { nights: 2, days: 3 }
+export function tripNights(start, end) {
+  const nights = Math.max(0, dayDiff(start, end));
+  return { nights, days: nights + 1 };
+}
+
+// "10월 3일 ~ 5일 · 2박 3일" (해가 넘어가면 연도까지)
+export function tripLabel(start, end) {
+  const { nights, days } = tripNights(start, end);
+  const [y1, m1, d1] = start.split('-').map(Number);
+  const [y2, m2, d2] = end.split('-').map(Number);
+  const from = `${y1}년 ${m1}월 ${d1}일`;
+  const to = y1 !== y2 ? `${y2}년 ${m2}월 ${d2}일` : m1 !== m2 ? `${m2}월 ${d2}일` : `${d2}일`;
+  if (nights === 0) return `${from} · 당일치기`;
+  return `${from} ~ ${to} · ${nights}박 ${days}일`;
+}
+
+// 오늘 기준 상태. upcoming(D-12) · ongoing(2일째) · past(3일 전)
+export function tripStatus(trip, today) {
+  if (today < trip.start_date) {
+    const days = dayDiff(today, trip.start_date);
+    return { state: 'upcoming', days, text: days === 0 ? 'D-DAY' : `D-${days}` };
+  }
+  if (today <= trip.end_date) {
+    const nth = dayDiff(trip.start_date, today) + 1;
+    return { state: 'ongoing', days: nth, text: `여행 중 · ${nth}일째` };
+  }
+  const days = dayDiff(trip.end_date, today);
+  return { state: 'past', days, text: days === 1 ? '어제' : `${days}일 전` };
+}
+
+// 다가오는 여행(진행 중 먼저, 가까운 순) / 지난 여행(최근 순)
+export function sortTrips(trips, today) {
+  const upcoming = trips
+    .filter((t) => t.end_date >= today)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date) || a.id - b.id);
+  const past = trips
+    .filter((t) => t.end_date < today)
+    .sort((a, b) => b.start_date.localeCompare(a.start_date) || b.id - a.id);
+  return { upcoming, past };
+}
+
+// Map<지역코드, [여행…]>. 여행은 최근 순.
+export function tripsByRegion(trips) {
+  const map = new Map();
+  for (const t of trips) {
+    for (const r of t.regions ?? []) {
+      if (!map.has(r.code)) map.set(r.code, []);
+      map.get(r.code).push(t);
+    }
+  }
+  for (const list of map.values()) list.sort((a, b) => b.start_date.localeCompare(a.start_date));
+  return map;
+}
