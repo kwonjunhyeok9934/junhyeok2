@@ -1486,6 +1486,39 @@ begin
   return v_meal;
 end $$;
 
+-- 41. 중복 카테고리 청소 -----------------------------------------------------------
+-- 예전 schema.sql 은 다시 실행할 때마다 식비 카테고리를 한 벌씩 더 넣었다(21번 가드가
+-- kind='meal' 만 봤다). 그 버그는 고쳤지만 **이미 생긴 중복은 남아 있다** — 칩이
+-- '컬리 컬리 컬리' 로 보이는 상태. 여기서 한 번 치운다.
+--
+-- 같은 kind·name 중 가장 오래된 것(id 작은 것)만 남기고, 나머지를 가리키던 기록은
+-- 남는 쪽으로 옮긴 뒤 지운다. 기록은 하나도 안 잃는다. 중복이 없으면 아무 일도 안 한다.
+
+do $$
+declare
+  n integer;
+begin
+  create temp table _dup_cats on commit drop as
+  select c.id as dup_id, k.keep_id
+    from categories c
+    join (select kind, name, min(id) as keep_id from categories group by kind, name) k
+      on k.kind = c.kind and k.name = c.name
+   where c.id <> k.keep_id;
+
+  select count(*) into n from _dup_cats;
+  if n = 0 then return; end if;
+
+  update transactions t set category_id = d.keep_id from _dup_cats d where t.category_id = d.dup_id;
+  update meals       m set place_id    = d.keep_id from _dup_cats d where m.place_id    = d.dup_id;
+  update meal_buys   b set how_id      = d.keep_id from _dup_cats d where b.how_id      = d.dup_id;
+  update pantry_items p set how_id     = d.keep_id from _dup_cats d where p.how_id      = d.dup_id;
+  update trip_plans  p set category_id = d.keep_id from _dup_cats d where p.category_id = d.dup_id;
+  update trip_costs  c set category_id = d.keep_id from _dup_cats d where c.category_id = d.dup_id;
+
+  delete from categories c using _dup_cats d where c.id = d.dup_id;
+  raise notice '중복 카테고리 %개를 정리했습니다', n;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles

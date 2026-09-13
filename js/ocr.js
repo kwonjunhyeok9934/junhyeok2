@@ -68,7 +68,52 @@ function dropOldCache() {
 // 이 브라우저에서 쓸 수 있는지 (오래된 웹뷰 대비).
 export const supported = () => typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
 
-// file(사진) → 읽은 글. onProgress(0~1) 로 진행률을 알려 준다.
+
+// 줄 목록을 납작하게 편다 (blocks → paragraphs → lines).
+function flatLines(data) {
+  const out = [];
+  for (const b of data?.blocks ?? []) {
+    for (const p of b.paragraphs ?? []) {
+      for (const l of p.lines ?? []) out.push(l);
+    }
+  }
+  return out;
+}
+
+// 스크린샷에는 **상품 사진 위에 찍힌 글자**('품절' 같은 뱃지)도 같이 읽힌다.
+// 그게 품목 이름 자리를 차지해 버려서(실제로 이름이 전부 '품절' 로 들어갔다)
+// 본문 칸 왼쪽에 있는 낱말은 버린다.
+//
+// 본문 칸이 어디서 시작하는지는 줄들의 왼쪽 끝 **중앙값**으로 본다 — 이름·값·안내가 모두
+// 같은 x 에서 시작하니 중앙값이 곧 본문 칸이고, 사진 속 글자만 그보다 왼쪽에 남는다.
+// 사진 칸이 없는 그림(잘라 온 것)이면 중앙값이 곧 글 시작이라 아무것도 안 버린다.
+function mainColumnText(data) {
+  const lines = flatLines(data);
+  if (lines.length < 4) return ''; // 줄이 몇 개 없으면 칸을 가늠할 수 없다
+  const starts = lines.map((l) => l.bbox?.x0 ?? 0).sort((a, b) => a - b);
+  const cut = starts[Math.floor(starts.length / 2)];
+  return lines.map((l) => lineText(l, cut)).filter(Boolean).join('\n');
+}
+
+// 한 줄을 글로. 버린 낱말이 없으면 **원래 글을 그대로 쓴다** — 그게 가장 정확하다.
+// 버린 게 있을 때만 남은 낱말을 다시 잇는데, 낱말 사이가 실제로 벌어진 자리에만
+// 띄어쓰기를 넣는다 (전부 띄우면 한글이 한 자씩 벌어진 것처럼 된다).
+function lineText(line, cut) {
+  const words = line.words ?? [];
+  const kept = words.filter((w) => (w.bbox?.x1 ?? 0) >= cut);
+  if (!kept.length) return '';
+  if (kept.length === words.length) return String(line.text ?? '').trim();
+  const gap = Math.max(4, Math.round(((line.bbox?.y1 ?? 0) - (line.bbox?.y0 ?? 0)) * 0.35));
+  return kept
+    .map((w, i) => (i && (w.bbox?.x0 ?? 0) - (kept[i - 1].bbox?.x1 ?? 0) <= gap ? '' : ' ') + w.text)
+    .join('')
+    .trim();
+}
+
+// file(사진) → { text, raw }.
+// text = 본문 칸만 남긴 글 (품목을 뽑을 때 쓴다 — 사진 속 뱃지가 이름 자리를 뺏지 않게)
+// raw  = 읽은 글 전부 (주문 날짜처럼 위쪽 안내 칸에 있는 것을 찾을 때 쓴다)
+// onProgress(0~1) 로 진행률을 알려 준다.
 // 화면을 어떻게 훑을지. 주문 내역은 '한 칸에 위에서 아래로 쌓인 글' 이라 기본값
 // (3 = 알아서 판단)보다 COLUMN 이 낫다 (글자 정확도 78% → 84%). 다만 사진·버튼이 섞인
 // 진짜 스크린샷에서는 BLOCK 이 나을 때가 있어 둘 다 열어 둔다 (js/pantry.js 가 한 번 더 시도한다).
@@ -88,8 +133,9 @@ export async function readText(file, onProgress = () => {}, psm = PSM.COLUMN) {
   });
   try {
     await worker.setParameters({ tessedit_pageseg_mode: psm });
-    const { data } = await worker.recognize(file);
-    return data.text ?? '';
+    const { data } = await worker.recognize(file, {}, { text: true, blocks: true });
+    const raw = data.text ?? '';
+    return { text: mainColumnText(data) || raw, raw };
   } finally {
     await worker.terminate();
   }

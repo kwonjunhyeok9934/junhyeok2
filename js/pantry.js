@@ -309,18 +309,19 @@ async function onShotPick(e) {
   el.shotNote.textContent = '읽는 중… 처음 한 번은 한글 데이터를 받느라 좀 걸려요';
   const show = (p) => { el.shotNote.textContent = `읽는 중… ${Math.round(p * 100)}%`; };
   try {
-    let text = await ocr.readText(file, show, ocr.PSM.COLUMN);
-    let found = parseOrderText(text);
+    let read = await ocr.readText(file, show, ocr.PSM.COLUMN);
+    let found = parseOrderText(read.text);
     // 사진·버튼이 섞인 화면은 훑는 방식에 따라 결과가 확 달라진다. 거의 못 찾았으면 한 번 더.
     if (found.length < 2) {
       el.shotNote.textContent = '다시 한 번 읽는 중…';
       const alt = await ocr.readText(file, show, ocr.PSM.BLOCK);
-      const altFound = parseOrderText(alt);
+      const altFound = parseOrderText(alt.text);
       if (altFound.length > found.length) {
-        text = alt;
+        read = alt;
         found = altFound;
       }
     }
+    const { text, raw } = read;
     // 읽은 글은 늘 펼쳐 볼 수 있게 둔다 — 엉뚱하게 나왔을 때 무엇을 봤는지 알 수 있어야 한다.
     el.shotRaw.hidden = false;
     el.shotText.textContent = text.trim() || '(글자를 하나도 못 읽었어요)';
@@ -328,12 +329,12 @@ async function onShotPick(e) {
       el.shotNote.textContent = '품목을 못 찾았어요. 아래 \'읽은 글 보기\' 로 뭘 봤는지 확인할 수 있어요.';
       return;
     }
-    const how = guessOrderHow(text, state.cats);
+    const how = guessOrderHow(raw, state.cats);
     if (how) {
       state.howId = how;
       renderHows();
     }
-    const date = guessOrderDate(text);
+    const date = guessOrderDate(raw);
     if (date) el.date.value = date;
     fillRows(found);
     haptic();
