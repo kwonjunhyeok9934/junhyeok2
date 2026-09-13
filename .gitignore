@@ -1,3 +1,6 @@
 node_modules/
 .vercel/
 .DS_Store
+
+# 지도 원본 (tools/build_korea_map.py 가 필요할 때 내려받는다)
+tools/skorea-municipalities-2018-geo.json

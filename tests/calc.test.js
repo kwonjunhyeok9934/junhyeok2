@@ -7,6 +7,7 @@ import {
   calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
   dayName, dayLabel, weekStart, weekDays, weekLabel, slotOfHour, mealMemo, resolveMealCategoryId,
   mealAmount, groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByCategory, planMealSave, planMealDelete,
+  visitedStats,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -326,4 +327,45 @@ test('planMealDelete: 연결된 거래도 함께 지운다', () => {
     tx: { op: 'none' },
     meal: { op: 'delete', id: 6 },
   });
+});
+
+// ---- 여행 ------------------------------------------------------------------
+
+const regions = [
+  { c: '11010', n: '종로구', s: '서울' },
+  { c: '11020', n: '중구', s: '서울' },
+  { c: '39010', n: '제주시', s: '제주' },
+  { c: '39020', n: '서귀포시', s: '제주' },
+  { c: '32030', n: '강릉시', s: '강원' },
+];
+
+test('visitedStats: 전체 수와 비율', () => {
+  const s = visitedStats(regions, new Set(['11010', '39010']));
+  assert.equal(s.done, 2);
+  assert.equal(s.total, 5);
+  assert.equal(s.percent, 40);
+});
+
+test('visitedStats: 하나도 안 갔을 때', () => {
+  const s = visitedStats(regions, new Set());
+  assert.deepEqual([s.done, s.percent], [0, 0]);
+  assert.equal(s.sido.every((x) => x.done === 0), true);
+});
+
+test('visitedStats: 시도별 집계와 순서', () => {
+  const s = visitedStats(regions, new Set(['39010', '39020', '32030']), ['서울', '강원', '제주']);
+  assert.deepEqual(s.sido, [
+    { name: '서울', done: 0, total: 2 },
+    { name: '강원', done: 1, total: 1 },
+    { name: '제주', done: 2, total: 2 },
+  ]);
+});
+
+test('visitedStats: 지도에 없는 코드는 세지 않는다', () => {
+  const s = visitedStats(regions, new Set(['11010', '99999']));
+  assert.equal(s.done, 1);
+});
+
+test('visitedStats: 지역이 없으면 0%', () => {
+  assert.deepEqual(visitedStats([], new Set(['11010'])), { done: 0, total: 0, percent: 0, sido: [] });
 });

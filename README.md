@@ -1,6 +1,7 @@
 # 우리집 (junhyeok2)
 
-두 사람이 함께 쓰는 모바일 웹앱(PWA). 홈 · 가계부 · 고정비 · 할일 · 스케줄 · 식비 여섯 탭.
+두 사람이 함께 쓰는 모바일 웹앱(PWA). 아래 탭은 홈 · 가계부 · 일정 · 여행 네 칸이고,
+가계부 칸 안에 가계부·식비·고정비, 일정 칸 안에 스케줄·할일이 작은 탭으로 들어 있다.
 설계: `docs/superpowers/specs/2026-09-05-couple-ledger-design.md`
 
 - 화면: HTML/CSS/JS, 빌드 없음
@@ -38,13 +39,15 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 | 경로 | 역할 |
 |---|---|
 | `index.html` `css/app.css` | 화면 뼈대와 스타일 |
-| `js/app.js` | 진입점: 세션 → 화면 전환, 탭, 실시간 구독, 설정 |
+| `js/app.js` | 진입점: 세션 → 화면 전환, 탭(네 칸 + 작은 탭), 실시간 구독, 설정 |
 | `js/ledger.js` | 가계부 탭 (조회·요약·목록·입력 시트) |
 | `js/meal.js` | 식비 탭 (주간 식단, 금액은 가계부와 자동 연동) |
 | `js/todo.js` | 할일 탭 (빠른 입력·목록·완료·편집 시트) |
 | `js/schedule.js` | 스케줄 탭 (월간 달력·그날 일정·일정 시트) |
 | `js/fixed.js` | 고정비 탭 (항목 목록·합계·시트) |
 | `js/home.js` | 홈 탭 (이번 달 지출·오늘 일정·할일·고정비 요약) |
+| `js/travel.js` | 여행 탭 (지도에서 다녀온 시군구 색칠) |
+| `js/koreamap.js` | 시군구 지도 SVG 데이터 (자동 생성, `docs/지도_데이터.md`) |
 | `js/push.js` | 알림 구독 켜기/끄기 |
 | `js/anniv.js` | 기념일 등록·삭제, 홈 D-day |
 | `js/weather.js` | 오늘 날씨·미세먼지 (Open-Meteo, 위치는 폰에만 저장) |
@@ -56,10 +59,21 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 | `sw.js` `manifest.webmanifest` `icons/` | PWA 설치 |
 | `supabase/schema.sql` | DB 표·권한·실시간·기본 카테고리 |
 | `.github/workflows/supabase-keepalive.yml` | Supabase 자동 일시정지 막는 하루 한 번 핑 |
+| `tools/build_korea_map.py` | 지도 데이터를 다시 만드는 스크립트 (평소엔 실행할 일 없음) |
 
 ## 동작 메모
 
 가계부 조회 기간(1·3·6·12개월·직접 지정)은 폰에 기억된다. 뒤로가기는 열린 시트·설정을 먼저 닫고, 없으면 두 번 눌러 종료한다.
+
+아래 탭바는 네 칸이지만 화면은 그대로 일곱 개다. 주소의 `#ledger` `#meal` `#fixed` `#schedule` `#todo` `#travel` 은 예전 그대로라
+알림에서 열리는 주소도 손대지 않았다. 탭바를 다시 누르면 그 칸에서 마지막으로 보던 화면으로 돌아온다.
+
+여행 탭은 전국 229개 시·군·구 지도에서 다녀온 곳을 눌러 색칠한다. 한 번 더 누르면 지워진다.
+두 손가락으로 확대·이동할 수 있고(서울 자치구처럼 작은 곳은 확대해야 누르기 쉽다), 칠한 곳은 `visited_regions` 에 코드 한 줄로 남아 둘이 함께 본다.
+지도 데이터를 다시 만드는 방법은 `docs/지도_데이터.md`.
+
+**여행 탭을 처음 쓸 때 한 번**: Supabase SQL Editor 에 `supabase/schema.sql` 의 23번 섹션(또는 전체)을 실행해 `visited_regions` 표를 만든다.
+안 만들었으면 여행 탭이 그렇게 안내한다.
 
 식비 탭은 한 주(월~일)의 아침·점심·저녁·야식을 적는다. 금액은 `meals` 에 저장하지 않고
 가계부 거래(`transactions`) 한 건과 1:1 로 연결한다 — 그래서 두 탭의 금액이 어긋날 수 없고,

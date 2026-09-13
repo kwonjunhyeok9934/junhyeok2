@@ -315,6 +315,28 @@ select * from (values
 ) as v(name, kind, sort_order)
 where not exists (select 1 from categories where kind = 'meal');
 
+-- 23. 여행 (다녀온 곳) ---------------------------------------------------------
+-- 지도에서 색칠한 시·군·구를 한 줄씩 남긴다. 코드는 js/koreamap.js 의 c 값.
+-- 지우면 색이 빠지는 것뿐이라 따로 보관하지 않는다.
+
+create table if not exists visited_regions (
+  code       text primary key,            -- 시군구 코드 (예: 39010 제주시)
+  name       text not null default '',    -- 칠할 때의 이름. 지도 데이터가 바뀌어도 뭘 칠했는지 남는다
+  created_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now()
+);
+
+alter table visited_regions enable row level security;
+drop policy if exists "auth all" on visited_regions;
+create policy "auth all" on visited_regions for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'visited_regions') then
+    alter publication supabase_realtime add table visited_regions;
+  end if;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
@@ -325,4 +347,5 @@ union all select 'events', count(*) from events
 union all select 'fixed_costs', count(*) from fixed_costs
 union all select 'push_subscriptions', count(*) from push_subscriptions
 union all select 'anniversaries', count(*) from anniversaries
-union all select 'meals', count(*) from meals;
+union all select 'meals', count(*) from meals
+union all select 'visited_regions', count(*) from visited_regions;

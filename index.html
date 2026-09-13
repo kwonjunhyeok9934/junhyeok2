@@ -48,10 +48,13 @@
 
 <!-- 메인 -->
 <div id="view-main" hidden>
-  <header class="topbar">
-    <h1 id="page-title">가계부</h1>
-    <button id="btn-settings" class="icon-btn" aria-label="설정">⚙</button>
-  </header>
+  <div class="topwrap">
+    <header class="topbar">
+      <h1 id="page-title">가계부</h1>
+      <button id="btn-settings" class="icon-btn" aria-label="설정">⚙</button>
+    </header>
+    <nav id="subtabs" class="subtabs" hidden></nav>
+  </div>
 
   <main>
     <section id="tab-home" class="tab" hidden><div class="skel"></div><div class="skel"></div><div class="skel"></div></section>
@@ -144,17 +147,42 @@
         <ul id="meal-cat-list" class="plain-list"></ul>
       </details>
     </section>
+
+    <section id="tab-travel" class="tab" hidden>
+      <div class="card travel-sum">
+        <div class="travel-head">
+          <span class="sum-label">다녀온 곳</span>
+          <div class="travel-count"><strong id="travel-done">0</strong><span id="travel-total"></span></div>
+        </div>
+        <div class="bar-track"><i id="travel-bar"></i></div>
+        <p id="travel-hint" class="hint" hidden>가 본 지역을 눌러 색칠해 보세요. 두 손가락으로 확대할 수 있어요.</p>
+      </div>
+
+      <div id="map-wrap" class="map-wrap">
+        <svg id="korea-map" role="img" aria-label="대한민국 시군구 지도"><g id="map-layer"></g></svg>
+        <div class="map-tools">
+          <button type="button" id="map-zoom-in" class="icon-btn" aria-label="확대">＋</button>
+          <button type="button" id="map-zoom-out" class="icon-btn" aria-label="축소">−</button>
+          <button type="button" id="map-reset" class="icon-btn" aria-label="전체 보기">⤢</button>
+        </div>
+      </div>
+
+      <div id="travel-notice" hidden></div>
+
+      <details id="travel-sido" class="card" hidden>
+        <summary>시도별</summary>
+        <ul id="travel-sido-list" class="plain-list"></ul>
+      </details>
+    </section>
   </main>
 
   <button id="btn-add" class="fab" aria-label="추가">＋</button>
 
   <nav class="tabbar">
-    <a href="#home" data-tab="home" class="active"><span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg></span>홈</a>
-    <a href="#ledger" data-tab="ledger"><span class="tab-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M7 15h3"/></svg></span>가계부</a>
-    <a href="#fixed" data-tab="fixed"><span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M5 8l7-5 7 5M6 21h12"/><path d="M8 12h8"/></svg></span>고정비</a>
-    <a href="#todo" data-tab="todo"><span class="tab-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span>할일</a>
-    <a href="#schedule" data-tab="schedule"><span class="tab-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>스케줄</a>
-    <a href="#meal" data-tab="meal"><span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M3.5 17.5h17"/><path d="M5 17.5a7 7 0 0 1 14 0"/><path d="M12 7.5v3"/></svg></span>식비</a>
+    <a href="#home" data-group="home" class="active"><span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg></span>홈</a>
+    <a href="#ledger" data-group="money"><span class="tab-icon"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M7 15h3"/></svg></span>가계부</a>
+    <a href="#schedule" data-group="plan"><span class="tab-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>일정</a>
+    <a href="#travel" data-group="travel"><span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg></span>여행</a>
   </nav>
 </div>
 

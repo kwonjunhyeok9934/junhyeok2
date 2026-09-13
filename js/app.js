@@ -9,8 +9,9 @@ import * as home from './home.js';
 import * as push from './push.js';
 import * as anniv from './anniv.js';
 import * as meal from './meal.js';
+import * as travel from './travel.js';
 
-const APP_VERSION = 'v17'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v18'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -20,17 +21,30 @@ const view = {
   settings: $('#view-settings'),
 };
 
+// 화면(탭) 하나하나. 주소의 # 이름이 그대로 키다 — 알림 딥링크(#ledger …)가 계속 열려야 한다.
 const TABS = {
-  home: { title: '우리집', el: $('#tab-home') },
-  ledger: { title: '가계부', el: $('#tab-ledger') },
-  fixed: { title: '고정비', el: $('#tab-fixed') },
-  todo: { title: '할일', el: $('#tab-todo') },
-  schedule: { title: '스케줄', el: $('#tab-schedule') },
-  meal: { title: '식비', el: $('#tab-meal') },
+  home: { title: '우리집', el: $('#tab-home'), group: 'home' },
+  ledger: { title: '가계부', el: $('#tab-ledger'), group: 'money' },
+  meal: { title: '식비', el: $('#tab-meal'), group: 'money' },
+  fixed: { title: '고정비', el: $('#tab-fixed'), group: 'money' },
+  schedule: { title: '스케줄', el: $('#tab-schedule'), group: 'plan' },
+  todo: { title: '할일', el: $('#tab-todo'), group: 'plan' },
+  travel: { title: '여행', el: $('#tab-travel'), group: 'travel' },
 };
 
+// 아래 탭바 네 칸. 한 칸 안의 화면은 위쪽 작은 탭으로 옮겨 다닌다.
+const GROUPS = {
+  home: ['home'],
+  money: ['ledger', 'meal', 'fixed'],
+  plan: ['schedule', 'todo'],
+  travel: ['travel'],
+};
+
+// 탭바를 다시 누르면 그 칸에서 마지막으로 보던 화면으로 돌아간다.
+const lastSeen = { home: 'home', money: 'ledger', plan: 'schedule', travel: 'travel' };
+
 let currentUser = null;
-let channel = null;
+let channels = [];
 
 function show(name) {
   for (const [k, v] of Object.entries(view)) v.hidden = k !== name;
@@ -130,40 +144,39 @@ function enterMain(user) {
   schedule.init({ userId: user.id });
   fixed.init();
   meal.init({ userId: user.id, onTxChange: () => { ledger.refresh(); home.refresh(); } });
+  travel.init({ userId: user.id });
   home.init({ onGo: goTab });
   routeHash();
-  home.refresh();
-  ledger.refresh();
-  todo.refresh();
-  schedule.refresh();
-  fixed.refresh();
-  meal.refresh();
+  refreshAll();
   subscribeRealtime();
   document.addEventListener('visibilitychange', onVisible);
 }
 
 function leaveMain() {
   currentUser = null;
-  if (channel) {
-    sb.removeChannel(channel);
-    channel = null;
-  }
+  for (const ch of channels) sb.removeChannel(ch);
+  channels = [];
   document.removeEventListener('visibilitychange', onVisible);
 }
 
-function onVisible() {
-  if (document.visibilityState !== 'visible') return;
+function refreshAll() {
   home.refresh();
   ledger.refresh();
   todo.refresh();
   schedule.refresh();
   fixed.refresh();
   meal.refresh();
+  travel.refresh();
+}
+
+function onVisible() {
+  if (document.visibilityState !== 'visible') return;
+  refreshAll();
 }
 
 function subscribeRealtime() {
-  if (channel) return;
-  channel = sb
+  if (channels.length) return;
+  const main = sb
     .channel('db-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => { ledger.refresh(); home.refresh(); meal.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => ledger.refresh())
@@ -173,6 +186,12 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'anniversaries' }, () => home.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'meals' }, () => meal.refresh())
     .subscribe();
+  // 여행 표는 나중에 생겼다. 아직 SQL 을 안 돌린 사람도 위 구독은 멀쩡하도록 따로 둔다.
+  const travelCh = sb
+    .channel('travel-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'visited_regions' }, () => travel.refresh())
+    .subscribe();
+  channels = [main, travelCh];
 }
 
 // ---- 탭 (URL 해시) --------------------------------------------------------
@@ -183,10 +202,13 @@ function bindTabs() {
   document.querySelectorAll('.tabbar a').forEach((a) =>
     a.addEventListener('click', (e) => {
       e.preventDefault();
-      history.replaceState(history.state, '', a.getAttribute('href'));
-      routeHash();
+      goTab(lastSeen[a.dataset.group]);
     }),
   );
+  $('#subtabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-tab]');
+    if (btn) goTab(btn.dataset.tab);
+  });
   setupBackGuard();
   $('#btn-add').addEventListener('click', () => {
     const tab = currentTab();
@@ -211,6 +233,8 @@ function goTab(name) {
 function routeHash() {
   lastHash = location.hash;
   const tab = currentTab();
+  const group = TABS[tab].group;
+  lastSeen[group] = tab;
   for (const [k, t] of Object.entries(TABS)) {
     const wasHidden = t.el.hidden;
     t.el.hidden = k !== tab;
@@ -222,9 +246,25 @@ function routeHash() {
     }
   }
   haptic(5);
-  document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));
+  document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.group === group));
+  renderSubtabs(group, tab);
   $('#page-title').textContent = TABS[tab].title;
-  $('#btn-add').hidden = tab === 'todo';
+  $('#btn-add').hidden = tab === 'todo' || tab === 'travel';
+}
+
+// 한 칸에 화면이 둘 이상일 때만 위쪽에 작은 탭을 보여준다.
+function renderSubtabs(group, tab) {
+  const bar = $('#subtabs');
+  const names = GROUPS[group];
+  bar.hidden = names.length < 2;
+  bar.innerHTML = bar.hidden
+    ? ''
+    : names
+        .map(
+          (n) =>
+            `<button type="button" class="subtab ${n === tab ? 'active' : ''}" data-tab="${n}">${TABS[n].title}</button>`,
+        )
+        .join('');
 }
 
 // ---- 뒤로가기: 열린 것 닫기 → 두 번 눌러 종료 ----------------------------------

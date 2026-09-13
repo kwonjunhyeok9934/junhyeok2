@@ -371,3 +371,27 @@ export function planMealDelete(before) {
     meal: { op: 'delete', id: before.id },
   };
 }
+
+// ---- 여행 ------------------------------------------------------------------
+
+// 다녀온 곳 집계: 전체 수와 시도별 { name, done, total }.
+// regions: [{ c, n, s }] (지도 데이터),  visited: 다녀온 코드 Set
+export function visitedStats(regions, visited, order = []) {
+  const bySido = new Map();
+  let done = 0;
+  for (const r of regions) {
+    const cur = bySido.get(r.s) ?? { name: r.s, done: 0, total: 0 };
+    cur.total += 1;
+    if (visited.has(r.c)) {
+      cur.done += 1;
+      done += 1;
+    }
+    bySido.set(r.s, cur);
+  }
+  const rank = new Map(order.map((n, i) => [n, i]));
+  const sido = [...bySido.values()].sort(
+    (a, b) => (rank.get(a.name) ?? 99) - (rank.get(b.name) ?? 99) || a.name.localeCompare(b.name),
+  );
+  const total = regions.length;
+  return { done, total, percent: total ? Math.round((done / total) * 100) : 0, sido };
+}
