@@ -20,7 +20,7 @@ const state = {
   items: [],       // 남은 것 전부 + 최근에 다 쓴 것
   cats: [],
   userId: null,
-  error: null,     // 31번 SQL 을 아직 안 돌렸으면 여기 담긴다
+  error: null,     // 사 둔 것 표가 아직 없으면 여기 담긴다
   showDone: false,
   editing: null,   // 고치는 중인 품목, 새로 담는 중이면 null
   howId: null,
@@ -68,7 +68,7 @@ function unwrap({ data, error }) {
   return data;
 }
 
-// 아직 31번 SQL 을 실행하지 않아 표가 없는 상태인지.
+// 아직 schema.sql 을 실행하지 않아 표가 없는 상태인지.
 function needsSql(err) {
   const m = `${err?.message ?? ''} ${err?.code ?? ''}`;
   return /does not exist|could not find the table|42P01|PGRST205/i.test(m);
@@ -78,7 +78,7 @@ const sheetOpen = () => el?.sheet.classList.contains('open');
 
 // ---- 조회 ------------------------------------------------------------------
 
-// 실패해도 던지지 않는다 — 31번 SQL 을 아직 안 돌린 사람도 식비 탭은 멀쩡해야 한다.
+// 실패해도 던지지 않는다 — 사 둔 것 표가 아직 없어도 식비 탭은 멀쩡해야 한다.
 export async function load() {
   if (!initialized) return;
   try {
@@ -128,7 +128,7 @@ function render() {
     el.waiting.hidden = true;
     el.notice.hidden = false;
     el.notice.innerHTML = needsSql(state.error)
-      ? `<p class="empty">사 둔 것 표가 아직 준비되지 않았어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 31번 섹션을 실행해 주세요.</p>`
+      ? `<p class="empty">사 둔 것 표가 아직 준비되지 않았어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 전체를 한 번 실행해 주세요.</p>`
       : `<div class="retry">불러오지 못했어요<br>
           <button type="button" class="btn small" data-retry>다시 시도</button>
         </div>`;
@@ -361,7 +361,7 @@ async function save() {
     await refresh();
   } catch (err) {
     console.error(err);
-    toast(needsSql(err) ? 'SQL 의 31번 섹션을 먼저 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
+    toast(needsSql(err) ? 'schema.sql 전체를 한 번 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
   } finally {
     el.save.disabled = false;
   }

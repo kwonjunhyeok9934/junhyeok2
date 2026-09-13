@@ -230,7 +230,8 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
   background-size: 200% 100%; animation: shimmer 1.2s infinite linear; }
 
 /* ---- 시트 ---- */
-.sheet { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+/* 시트는 오버레이(여행 상세·설정, z-index 30) 위에 떠야 한다 — 상세에서 일정 시트를 연다 */
+.sheet { position: fixed; inset: 0; z-index: 35; pointer-events: none; }
 .sheet-backdrop {
   position: absolute; inset: 0; background: rgba(0, 0, 0, .45);
   opacity: 0; transition: opacity .25s;
@@ -565,8 +566,12 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 /* 직접 칠한 곳은 연하게, 여행 기록이 있는 곳은 진하게 */
 #map-layer path.been { fill: color-mix(in srgb, var(--accent) 42%, var(--line)); }
 #map-layer path.trip { fill: var(--accent); }
+/* 지역 이름표 — 확대하면 작은 곳까지 나온다 (크기는 travel.js 가 배율에 맞춰 잡는다) */
+#map-labels { pointer-events: none; stroke: var(--card); paint-order: stroke; stroke-linejoin: round; }
+#map-labels text { fill: var(--text-2); text-anchor: middle; dominant-baseline: central; font-weight: 600; }
+#map-labels text.on { fill: var(--text); }
 .map-tools {
-  position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 2px;
+  position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 2px;
   background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--line);
   border-radius: 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
 }
@@ -618,3 +623,47 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .trip-spend { display: flex; align-items: baseline; gap: 4px; }
 .trip-spend strong { font-size: 24px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .trip-spend span { color: var(--muted); font-size: 14px; }
+
+
+/* 여행 상세의 일차별 일정 */
+.plans h2 .count { color: var(--accent); }
+.plan-day { margin-top: 12px; padding-top: 6px; border-top: 1px solid var(--line); }
+.plan-day:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+.plan-day.today .day-head { color: var(--accent); }
+.plan-row { background: var(--bg); box-shadow: none; margin-bottom: 6px; padding: 11px 12px; }
+.plan-add {
+  width: 100%; border: 1.5px dashed var(--line); background: transparent; color: var(--muted);
+  border-radius: 12px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: transform .12s var(--spring), background-color .15s;
+}
+.plan-add:active { transform: scale(.98); background: var(--accent-soft); }
+#plan-days .chip small { color: inherit; opacity: .65; }
+
+/* 접었다 펴는 카드 (여행 상세의 준비물) */
+.fold { padding: 14px 16px; }
+.fold > summary {
+  cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; font-weight: 600; color: var(--muted);
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
+.fold[open] > summary { margin-bottom: 12px; }
+.fold[open] > summary::after { transform: rotate(180deg); }
+
+/* 준비물 대분류 머리 (여행 상세 안에서는 조금 작게) */
+.fold .group-head { margin: 14px 2px 6px; }
+.fold .group-head:first-of-type { margin-top: 2px; }
+#packing-list .group-head { margin: 18px 2px 8px; }
+#packing-list .item-row { padding: 9px 8px 9px 14px; margin-bottom: 6px; }
+#packing-list .item-row .icon-btn { font-size: 13px; padding: 6px 8px; color: var(--muted); }
+
+/* 일정 시트의 지출 줄 (분류 + 금액) */
+.cost-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.cost-row select {
+  flex: 0 0 42%; border: 0; background: var(--bg); color: var(--text);
+  border-radius: 12px; padding: 13px 10px; font: inherit;
+}
+.cost-row .cost-amount { flex: 1; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.cost-row .icon-btn.del { color: var(--muted); font-size: 14px; padding: 6px 4px; }
+.cost-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.cost-tags .tag { margin-left: 0; font-variant-numeric: tabular-nums; }

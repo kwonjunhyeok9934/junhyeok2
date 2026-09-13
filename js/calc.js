@@ -719,6 +719,56 @@ export function sortTrips(trips, today) {
   return { upcoming, past };
 }
 
+// 여행 이름은 안 적어도 된다 — "어디" 로 짓는다. 제주시를 두 번 갔으면 다음은 "제주시 3".
+export function nextTripName(place, been = 0) {
+  const name = (place ?? '').trim();
+  if (!name) return '여행';
+  return been > 0 ? `${name} ${been + 1}` : name;
+}
+
+// 여행 기간의 날짜들 ['2026-09-13', '2026-09-14', '2026-09-15']
+export function tripDates(start, end) {
+  const out = [];
+  for (let d = start; d <= end && out.length < 60; d = shiftDay(d, 1)) out.push(d);
+  return out;
+}
+
+// 일차별로 묶는다. 날짜가 기간 밖이면 첫날에 붙여 둔다 (기간을 줄였을 때 사라지지 않게).
+export function groupPlansByDate(plans, dates) {
+  const map = new Map(dates.map((d) => [d, []]));
+  for (const p of plans) {
+    const key = map.has(p.date) ? p.date : dates[0];
+    if (key !== undefined) map.get(key).push(p);
+  }
+  for (const list of map.values()) list.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || a.id - b.id);
+  return map;
+}
+
+// 일정 한 줄에 붙은 지출 줄들의 합 (성산일출봉 = 티켓 5,000 + 굿즈 12,000)
+export function sumCosts(plan) {
+  return (plan?.costs ?? []).reduce((a, c) => a + (c.amount || 0), 0);
+}
+
+export function sumPlans(plans) {
+  return plans.reduce((a, p) => a + sumCosts(p), 0);
+}
+
+// 준비물을 대분류로 묶는다. 기본 분류를 앞에 두고, 새로 만든 분류는 그 뒤에 이름 순.
+// [{ name: '의류', items: [...] }, …]
+export function groupPacking(items, baseOrder = []) {
+  const map = new Map();
+  for (const it of items) {
+    const key = it.group_name || '기타';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(it);
+  }
+  const rank = new Map(baseOrder.map((n, i) => [n, i]));
+  const big = baseOrder.length + 100;
+  return [...map.entries()]
+    .map(([name, list]) => ({ name, items: list.slice().sort((a, b) => a.sort_order - b.sort_order || a.id - b.id) }))
+    .sort((a, b) => (rank.get(a.name) ?? big) - (rank.get(b.name) ?? big) || a.name.localeCompare(b.name));
+}
+
 // Map<지역코드, [여행…]>. 여행은 최근 순.
 export function tripsByRegion(trips) {
   const map = new Map();

@@ -199,6 +199,16 @@
       <div id="trip-past"></div>
       <div id="trip-empty" class="empty" hidden>아직 기록한 여행이 없어요<br>오른쪽 아래 + 로 만들어 보세요</div>
     </section>
+
+    <section id="tab-packing" class="tab" hidden>
+      <div id="packing-groups" class="chips" style="margin-bottom:10px"></div>
+      <form id="packing-quick" class="row quick">
+        <input id="packing-title" type="text" placeholder="챙길 것을 적고 Enter" maxlength="60" autocomplete="off">
+        <button type="submit" class="btn primary small">추가</button>
+      </form>
+      <p class="hint" style="margin:-6px 0 12px">위에서 대분류를 고르고 적으면 그 분류로 들어가요. 항목을 누르면 이름·분류를 고칩니다.</p>
+      <div id="packing-list"><div class="skel"></div><div class="skel"></div></div>
+    </section>
   </main>
 
   <button id="btn-add" class="fab" aria-label="추가">＋</button>
@@ -453,7 +463,14 @@
   <div class="sheet-panel">
     <form id="trip-form">
       <input type="hidden" id="trip-id">
-      <input id="trip-title" type="text" placeholder="여행 이름 (예: 가을 경주)" maxlength="40" required>
+      <div>
+        <div class="field-label">어디</div>
+        <div id="trip-regions" class="chips"></div>
+        <div id="trip-region-pick" hidden style="margin-top:8px">
+          <input id="trip-region-search" type="text" placeholder="지역 이름 (예: 강릉, 제주)" maxlength="20" autocomplete="off">
+          <div id="trip-region-results" class="chips" style="margin-top:8px"></div>
+        </div>
+      </div>
       <div>
         <div class="field-label">언제</div>
         <div class="row">
@@ -463,18 +480,56 @@
         </div>
         <p id="trip-span" class="hint"></p>
       </div>
-      <div>
-        <div class="field-label">어디</div>
-        <div id="trip-regions" class="chips"></div>
-        <div id="trip-region-pick" hidden style="margin-top:8px">
-          <input id="trip-region-search" type="text" placeholder="지역 이름 (예: 강릉, 제주)" maxlength="20" autocomplete="off">
-          <div id="trip-region-results" class="chips" style="margin-top:8px"></div>
-        </div>
-      </div>
+      <input id="trip-title" type="text" placeholder="여행 이름 (안 적어도 돼요)" maxlength="40">
       <input id="trip-memo" type="text" placeholder="메모 (선택)" maxlength="120">
       <div class="row actions">
         <button type="button" id="trip-delete" class="btn danger" hidden>삭제</button>
         <button type="submit" id="trip-save" class="btn primary grow" disabled>저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 준비물 항목 시트 -->
+<div id="sheet-packing" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <form id="packing-form">
+      <input type="hidden" id="packing-id">
+      <input id="packing-name" type="text" placeholder="준비물 이름" maxlength="60" required>
+      <div>
+        <div class="field-label">대분류</div>
+        <div id="packing-item-groups" class="chips"></div>
+      </div>
+      <div class="row actions">
+        <button type="button" id="packing-delete" class="btn danger">삭제</button>
+        <button type="submit" id="packing-save" class="btn primary grow">저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 일정 한 줄 시트 -->
+<div id="sheet-plan" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <form id="plan-form">
+      <input type="hidden" id="plan-id">
+      <div>
+        <div class="field-label">며칠째</div>
+        <div id="plan-days" class="chips"></div>
+      </div>
+      <input id="plan-place" type="text" placeholder="어디를 갔나요? (예: 성산일출봉)" maxlength="60" autocomplete="off" required>
+      <div>
+        <div class="field-label">쓴 돈</div>
+        <div id="plan-costs"></div>
+        <button type="button" id="plan-cost-add" class="plan-add" style="margin-top:8px">＋ 지출 추가</button>
+      </div>
+      <input id="plan-memo" type="text" placeholder="메모 (선택)" maxlength="80">
+      <p class="hint">한 장소에 티켓·굿즈처럼 여러 번 써도 돼요. 적은 금액은 가계부에 '여행' 지출로 들어가요.</p>
+      <div class="row actions">
+        <button type="button" id="plan-delete" class="btn danger" hidden>삭제</button>
+        <button type="submit" id="plan-save" class="btn primary grow" disabled>저장</button>
       </div>
     </form>
   </div>

@@ -12,6 +12,7 @@ import {
   pantryPrice, pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
   parseOrderText, guessOrderHow, guessOrderDate,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
+  nextTripName, tripDates, groupPlansByDate, sumPlans, sumCosts, groupPacking,
 } from '../js/calc.js';
 
 test('monthRange: 해당 월 1일과 말일', () => {
@@ -845,4 +846,65 @@ test('tripsByRegion: 지역별로 묶고 최근 순', () => {
 
 test('tripsByRegion: 지역이 없는 여행은 건너뛴다', () => {
   assert.equal(tripsByRegion([{ id: 9, start_date: '2026-01-01' }]).size, 0);
+});
+
+test('nextTripName: 이름을 안 적으면 어디로 짓는다', () => {
+  assert.equal(nextTripName('제주시', 0), '제주시');
+  assert.equal(nextTripName('제주시', 2), '제주시 3');
+  assert.equal(nextTripName(' 강릉시 ', 1), '강릉시 2');
+  assert.equal(nextTripName('', 3), '여행');
+  assert.equal(nextTripName(null), '여행');
+});
+
+test('tripDates: 기간의 날짜들', () => {
+  assert.deepEqual(tripDates('2026-09-13', '2026-09-15'), ['2026-09-13', '2026-09-14', '2026-09-15']);
+  assert.deepEqual(tripDates('2026-09-13', '2026-09-13'), ['2026-09-13']);
+  assert.deepEqual(tripDates('2026-12-31', '2027-01-01'), ['2026-12-31', '2027-01-01']);
+});
+
+const plans = [
+  { id: 1, date: '2026-09-14', place: '성산일출봉', created_at: '2026-09-14T01:00:00Z',
+    costs: [{ id: 1, amount: 5000 }, { id: 2, amount: 12000 }] },       // 티켓 + 굿즈
+  { id: 2, date: '2026-09-13', place: '공항', costs: [], created_at: '2026-09-13T01:00:00Z' },
+  { id: 3, date: '2026-09-13', place: '점심', costs: [{ id: 3, amount: 24000 }], created_at: '2026-09-13T02:00:00Z' },
+  { id: 4, date: '2026-10-01', place: '기간 밖', costs: [{ id: 4, amount: 1000 }], created_at: '2026-09-13T00:30:00Z' },
+];
+
+test('groupPlansByDate: 일차별로 묶고 적은 순서대로', () => {
+  const map = groupPlansByDate(plans, tripDates('2026-09-13', '2026-09-15'));
+  assert.deepEqual([...map.keys()], ['2026-09-13', '2026-09-14', '2026-09-15']);
+  assert.deepEqual(map.get('2026-09-13').map((p) => p.id), [4, 2, 3]); // 기간 밖은 첫날로
+  assert.deepEqual(map.get('2026-09-14').map((p) => p.id), [1]);
+  assert.deepEqual(map.get('2026-09-15'), []);
+});
+
+test('sumCosts: 한 장소에 붙은 지출 줄들', () => {
+  assert.equal(sumCosts(plans[0]), 17000);   // 티켓 5,000 + 굿즈 12,000
+  assert.equal(sumCosts(plans[1]), 0);       // 돈 안 쓴 장소
+  assert.equal(sumCosts({}), 0);
+  assert.equal(sumCosts(null), 0);
+});
+
+test('sumPlans: 쓴 돈 합계', () => {
+  assert.equal(sumPlans(plans), 42000);
+  assert.equal(sumPlans([]), 0);
+});
+
+test('groupPacking: 기본 분류 순서 → 새 분류는 이름 순', () => {
+  const items = [
+    { id: 1, title: '충전기', group_name: '전자기기', sort_order: 30 },
+    { id: 2, title: '속옷', group_name: '의류', sort_order: 20 },
+    { id: 3, title: '상의', group_name: '의류', sort_order: 10 },
+    { id: 4, title: '여권', group_name: '서류', sort_order: 40 },
+    { id: 5, title: '수영복', group_name: '해변', sort_order: 50 },
+    { id: 6, title: '무엇', sort_order: 60 },
+  ];
+  const groups = groupPacking(items, ['의류', '세면도구', '전자기기', '서류', '기타']);
+  assert.deepEqual(groups.map((g) => g.name), ['의류', '전자기기', '서류', '기타', '해변']);
+  assert.deepEqual(groups[0].items.map((i) => i.title), ['상의', '속옷']); // sort_order 순
+  assert.deepEqual(groups[3].items.map((i) => i.title), ['무엇']);        // 분류 없으면 기타
+});
+
+test('groupPacking: 비어 있으면 빈 목록', () => {
+  assert.deepEqual(groupPacking([], ['의류']), []);
 });

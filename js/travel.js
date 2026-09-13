@@ -39,6 +39,8 @@ export function init({ userId }) {
     wrap: $('#map-wrap'),
     svg: $('#korea-map'),
     layer: $('#map-layer'),
+    shapes: null,
+    labels: null,
     sido: $('#travel-sido'),
     sidoList: $('#travel-sido-list'),
     notice: $('#travel-notice'),
@@ -51,9 +53,16 @@ export function init({ userId }) {
   };
 
   el.svg.setAttribute('viewBox', VIEWBOX);
-  el.layer.innerHTML = REGIONS.map(
-    (r) => `<path data-c="${r.c}" d="${r.d}"><title>${escapeHtml(r.n)}</title></path>`,
-  ).join('');
+  // 모양과 이름표를 따로 둔다. 둘 다 같은 <g> 안이라 확대·이동이 한 번에 먹는다.
+  el.layer.innerHTML =
+    `<g id="map-shapes">${REGIONS.map((r) => `<path data-c="${r.c}" d="${r.d}"><title>${escapeHtml(r.n)}</title></path>`).join('')}</g>` +
+    `<g id="map-labels">${REGIONS.map(
+      (r) => `<text data-c="${r.c}" data-w="${r.b[2]}" data-h="${r.b[3]}" x="${r.p[0]}" y="${r.p[1]}">${escapeHtml(r.n)}</text>`,
+    ).join('')}</g>`;
+  el.shapes = $('#map-shapes');
+  el.labels = $('#map-labels');
+  // 탭이 숨어 있는 동안은 지도 크기를 알 수 없다. 보이기 시작하면 이름표를 다시 잡는다.
+  new ResizeObserver(() => updateLabels(true)).observe(el.wrap);
 
   bindGestures();
   bindSheetBackdrop(el.sheet);
@@ -101,7 +110,7 @@ export async function refresh() {
     el.wrap.hidden = true;
     el.notice.hidden = false;
     el.notice.innerHTML = missingTable(err)
-      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 27·29번 섹션을 실행해 주세요.</p>`
+      ? `<p class="empty">여행 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 전체를 한 번 실행해 주세요.</p>`
       : `<div class="retry">불러오지 못했어요<br>
           <button type="button" class="btn small" data-retry>다시 시도</button>
         </div>`;
@@ -120,11 +129,16 @@ function missingTable(err) {
 export function render() {
   if (!initialized) return;
   const trips = trip.regionCodes();
-  for (const path of el.layer.children) {
+  for (const path of el.shapes.children) {
     const code = path.dataset.c;
     path.classList.toggle('been', state.visited.has(code));
     path.classList.toggle('trip', trips.has(code));
   }
+  for (const label of el.labels.children) {
+    const code = label.dataset.c;
+    label.classList.toggle('on', state.visited.has(code) || trips.has(code));
+  }
+  updateLabels(true);
   renderSummary(trips);
   if (state.region && el.sheet.classList.contains('open')) renderRegionSheet();
 }
@@ -207,7 +221,7 @@ async function toggleVisited(code) {
     if (on) state.visited.delete(code);
     else state.visited.add(code);
     render();
-    toast(missingTable(err) ? '여행 표가 아직 없어요. schema.sql 27번을 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
+    toast(missingTable(err) ? '여행 표가 아직 없어요. schema.sql 전체를 한 번 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
   } finally {
     state.pending.delete(code);
   }
@@ -221,6 +235,50 @@ function applyView() {
   view.y = Math.min(0, Math.max(VBH * (1 - view.k), view.y));
   el.layer.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
   el.wrap.classList.toggle('zoomed', view.k > 1.01);
+  updateLabels();
+}
+
+// 이름표. 글자 크기는 배율과 상관없이 화면에서 늘 13px 이고,
+// 이름이 들어갈 만큼 지역이 커 보일 때만 나온다 — 확대할수록 작은 곳까지 나오는 셈이다.
+// 다녀온 곳·여행 기록은 훨씬 일찍 보여 준다 ("여기 갔었지" 가 먼저 읽히게).
+let labelPx = 0;
+function updateLabels(force = false) {
+  if (!el.labels) return;
+  const box = el.svg.getBoundingClientRect();
+  if (!box.width) return; // 탭이 숨어 있을 때
+  // 지도 한 칸이 화면에서 몇 px 인지 (viewBox 는 여백을 두고 맞춰진다)
+  const px = Math.min(box.width / VBW, box.height / VBH) * view.k;
+  el.labels.style.fontSize = `${(13 / px).toFixed(1)}px`;
+  el.labels.style.strokeWidth = (3.5 / px).toFixed(1);
+
+  if (!force && Math.abs(px - labelPx) < labelPx * 0.04) return;
+  labelPx = px;
+
+  const show = [];
+  for (const label of el.labels.children) {
+    const w = label.dataset.w * px;
+    const h = label.dataset.h * px;
+    const fits = label.classList.contains('on') ? w >= 18 : w >= 48 && h >= 15;
+    if (fits) show.push(label);
+    else label.style.display = 'none';
+  }
+
+  // 겹치면 덜 중요한 쪽을 숨긴다 (칠한 곳 먼저, 그 다음 넓은 곳).
+  show.sort(
+    (a, b) =>
+      b.classList.contains('on') - a.classList.contains('on') ||
+      b.dataset.w * b.dataset.h - a.dataset.w * a.dataset.h,
+  );
+  const placed = [];
+  for (const label of show) {
+    const halfW = (label.textContent.length * 12 + 8) / 2 / px;
+    const halfH = 9 / px;
+    const x = Number(label.getAttribute('x'));
+    const y = Number(label.getAttribute('y'));
+    const hidden = placed.some((q) => Math.abs(q.x - x) < q.halfW + halfW && Math.abs(q.y - y) < q.halfH + halfH);
+    label.style.display = hidden ? 'none' : '';
+    if (!hidden) placed.push({ x, y, halfW, halfH });
+  }
 }
 
 function resetView() {

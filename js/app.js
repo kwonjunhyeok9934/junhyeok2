@@ -12,8 +12,9 @@ import * as meal from './meal.js';
 import * as pantry from './pantry.js';
 import * as travel from './travel.js';
 import * as trip from './trip.js';
+import * as packing from './packing.js';
 
-const APP_VERSION = 'v25'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v28'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -35,6 +36,7 @@ const TABS = {
   todo: { title: '할일', el: $('#tab-todo'), group: 'plan' },
   travel: { title: '지도', el: $('#tab-travel'), group: 'travel' },
   trips: { title: '내 여행', el: $('#tab-trips'), group: 'travel' },
+  packing: { title: '준비물', el: $('#tab-packing'), group: 'travel' },
 };
 
 // 아래 탭바 네 칸. 한 칸 안의 화면은 위쪽 작은 탭으로 옮겨 다닌다.
@@ -42,7 +44,7 @@ const GROUPS = {
   home: ['home'],
   money: ['ledger', 'meal', 'fixed', 'pantry'],
   plan: ['schedule', 'todo'],
-  travel: ['travel', 'trips'],
+  travel: ['travel', 'trips', 'packing'],
 };
 
 // 탭바를 다시 누르면 그 칸에서 마지막으로 보던 화면으로 돌아간다.
@@ -154,8 +156,11 @@ function enterMain(user) {
   trip.init({
     userId: user.id,
     onChange: () => travel.render(),                                   // 여행이 바뀌면 지도도 다시 칠한다
+    onTxChange: () => { ledger.refresh(); home.refresh(); },           // 일정에 적은 돈은 가계부로 간다
     onShowRange: (start, end) => { ledger.showRange(start, end); goTab('ledger'); },
+    onGo: goTab,
   });
+  packing.init({ onChange: () => trip.rerender() });
   home.init({ onGo: goTab });
   routeHash();
   refreshAll();
@@ -180,6 +185,7 @@ function refreshAll() {
   pantry.refresh();
   travel.refresh();
   trip.refresh();
+  packing.refresh();
 }
 
 function onVisible() {
@@ -206,9 +212,11 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'visited_regions' }, () => travel.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, () => trip.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_regions' }, () => trip.refresh())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_items' }, () => trip.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_plans' }, () => { trip.refresh(); ledger.refresh(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_packed' }, () => trip.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'packing_items' }, () => packing.refresh())
     .subscribe();
-  // 사 둔 것도 나중에 생겼다 (31번 SQL). 같은 이유로 따로 둔다.
+  // 사 둔 것도 나중에 생겼다 (schema.sql 37번). 같은 이유로 따로 둔다.
   const pantryCh = sb
     .channel('pantry-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items' }, () => pantry.refresh())
@@ -238,7 +246,7 @@ function bindTabs() {
     else if (tab === 'fixed') fixed.openNew();
     else if (tab === 'meal') meal.openNew();
     else if (tab === 'pantry') pantry.openNew();
-    else if (tab === 'trips') trip.openNew();
+    else if (tab === 'trips' || tab === 'travel') trip.openNew();
     else ledger.openNew(); // 홈·가계부는 지출 입력
   });
 }
@@ -273,7 +281,7 @@ function routeHash() {
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.group === group));
   renderSubtabs(group, tab);
   $('#page-title').textContent = TABS[tab].title;
-  $('#btn-add').hidden = tab === 'todo' || tab === 'travel';
+  $('#btn-add').hidden = tab === 'todo' || tab === 'packing';
 }
 
 // 한 칸에 화면이 둘 이상일 때만 위쪽에 작은 탭을 보여준다.

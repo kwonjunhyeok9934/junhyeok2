@@ -124,7 +124,7 @@ export async function refresh() {
   } catch (err) {
     console.error(err);
     el.week.innerHTML = needsSql(err)
-      ? `<p class="empty">식비 표가 아직 준비되지 않았어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 23번 섹션을 실행해 주세요.</p>`
+      ? `<p class="empty">식비 표가 아직 준비되지 않았어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 전체를 한 번 실행해 주세요.</p>`
       : `<div class="retry">불러오지 못했어요<br>
           <button type="button" class="btn small" data-retry>다시 시도</button>
         </div>`;
@@ -594,7 +594,7 @@ async function save() {
     onTxChange();
   } catch (err) {
     console.error(err);
-    toast(needsSql(err) ? 'SQL 의 23번 섹션을 먼저 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
+    toast(needsSql(err) ? 'schema.sql 전체를 한 번 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
   } finally {
     el.save.disabled = false;
   }
