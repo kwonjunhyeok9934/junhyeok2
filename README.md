@@ -48,11 +48,20 @@ python3 -m http.server 8000       # 로컬에서 열어보기 → http://localho
 | `js/anniv.js` | 기념일 등록·삭제, 홈 D-day |
 | `js/weather.js` | 오늘 날씨·미세먼지 (Open-Meteo, 위치는 폰에만 저장) |
 | `supabase/functions/notify/index.ts` | 알림 발송 Edge Function (웹훅·아침 요약) |
-
-동작 메모: 가계부 조회 기간(1·3·6·12개월·직접 지정)은 폰에 기억된다. 뒤로가기는 열린 시트·설정을 먼저 닫고, 없으면 두 번 눌러 종료한다.
 | `js/categories.js` | 카테고리 CRUD와 설정 화면 |
 | `js/calc.js` | 순수 계산 함수 (`tests/calc.test.js`) |
 | `js/supabase.js` `js/config.js` | Supabase 클라이언트와 연결 정보 |
 | `js/ui.js` | 시트·토스트 등 공용 조각 |
 | `sw.js` `manifest.webmanifest` `icons/` | PWA 설치 |
 | `supabase/schema.sql` | DB 표·권한·실시간·기본 카테고리 |
+| `.github/workflows/supabase-keepalive.yml` | Supabase 자동 일시정지 막는 하루 한 번 핑 |
+
+## 동작 메모
+
+가계부 조회 기간(1·3·6·12개월·직접 지정)은 폰에 기억된다. 뒤로가기는 열린 시트·설정을 먼저 닫고, 없으면 두 번 눌러 종료한다.
+
+Supabase 무료 플랜은 일주일 동안 요청이 없으면 프로젝트를 **자동으로 일시정지**한다. 그러면 앱이 로그인부터 막힌다.
+`.github/workflows/supabase-keepalive.yml` 이 매일 한 번(12:17 KST) 가벼운 조회를 보내 이를 막는다.
+접속 정보는 `js/config.js` 에서 읽으므로 따로 설정할 것은 없고, Actions 탭에서 *Run workflow* 로 바로 돌려볼 수 있다.
+프로젝트가 이미 멈췄다면 https://supabase.com/dashboard 에서 **Restore** 를 누르면 데이터 그대로 되살아난다.
+GitHub 는 저장소에 60일 동안 활동이 없으면 예약 워크플로를 끄므로, 그때는 메일이 오고 Actions 탭에서 다시 켜면 된다.
