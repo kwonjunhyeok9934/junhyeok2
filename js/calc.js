@@ -620,7 +620,17 @@ const ORDER_NOISE = [
   /^[\d\s:().월일시분]+$/,                 // 9.10(목) 05:11 같은 줄
 ];
 
-const isOrderNoise = (line) => ORDER_NOISE.some((re) => re.test(line));
+const isOrderNoise = (line) => ORDER_NOISE.some((re) => re.test(unspace(line)));
+
+// OCR 이 한글을 한 글자씩 떼어 놓을 때가 있다 ('[ 사 조 대 림 ] 육 식 맨 의 케 제 크 라 이 너').
+// 그런 줄은 띄어쓰기가 통째로 가짜라 붙여 놓는 편이 읽을 만하다.
+// 멀쩡한 줄은 건드리지 않는다 — 한 글자짜리 토막이 절반을 넘을 때만 붙인다.
+export function unspace(line) {
+  const parts = String(line ?? '').trim().split(/\s+/);
+  if (parts.length < 4) return String(line ?? '');
+  const singles = parts.filter((w) => /^[가-힣]$/.test(w)).length;
+  return singles / parts.length > 0.5 ? parts.join('') : String(line ?? '');
+}
 
 // 그 줄에 적힌 가격들 (큰 자릿수 쉼표가 마침표로 읽히는 일이 잦아 둘 다 받는다).
 function pricesIn(line) {
@@ -662,7 +672,7 @@ export function parseOrderText(text) {
     }
     if (isOrderNoise(line)) continue;
     // 가격이 섞인 설명 줄(= 가격 줄은 아닌 줄)은 이름으로 삼지 않는다.
-    if (!prices.length) name = line.slice(0, 40);
+    if (!prices.length) name = unspace(line).slice(0, 40);
   }
   return out;
 }

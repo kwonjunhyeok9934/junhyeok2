@@ -11,7 +11,7 @@ import {
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryPrice, pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
   pantryUsedLabel, pantryNextUsed, pantryLeftOf,
-  parseOrderText, guessOrderHow, guessOrderDate,
+  parseOrderText, guessOrderHow, guessOrderDate, unspace,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
   nextTripName, tripDates, groupPlansByDate, splitPrep, sumPlans, sumCosts, groupPacking,
 } from '../js/calc.js';
@@ -760,6 +760,31 @@ test('parseOrderText: 한글이 여럿 남는 줄은 가격 줄이 아니다', (
   // 값이 섞인 줄은 이름으로 안 쓴다 — 안 그러면 못 걸러 낸 요약 줄이 품목으로 들어온다.
   // 그래서 '5,000원권 상품권' 같은 이름은 못 잡는다(드물고, 시트에서 적으면 된다).
   assert.deepEqual(parseOrderText('5,000원권 상품권 세트\n4,500원 1개'), []);
+});
+
+test('unspace: 한 글자씩 떼어 놓인 줄만 붙인다', () => {
+  // 옛 학습 데이터가 이렇게 뱉었다. 띄어쓰기가 통째로 가짜라 붙이는 게 낫다.
+  assert.equal(unspace('[ 사 조 대 림 ] 육 식 맨 의 케 제 크 라 이 너'), '[사조대림]육식맨의케제크라이너');
+  assert.equal(unspace('떼 각 각 ] 청 상 추 20009'), '떼각각]청상추20009');
+  // 멀쩡한 줄은 그대로 둔다
+  assert.equal(unspace('[사조대림] 육식맨의 케제크라이너'), '[사조대림] 육식맨의 케제크라이너');
+  assert.equal(unspace('[크라운] 산도 살구팝 323g'), '[크라운] 산도 살구팝 323g');
+  assert.equal(unspace('4,480원 1개'), '4,480원 1개');
+  assert.equal(unspace('두부 한 모'), '두부 한 모');   // 짧은 줄은 손대지 않는다
+  assert.equal(unspace(''), '');
+  assert.equal(unspace(null), '');
+});
+
+test('parseOrderText: 글자가 벌어져 있어도 품목을 잡는다', () => {
+  const spaced = `배 송 완 료 9.10(목) 05:11
+[ 사 조 대 림 ] 육 식 맨 의 케 제 크 라 이 너
+4,480 원 1 개
+떼 각 각 ] 청 상 추 20009
+3,940 원 1 개`;
+  assert.deepEqual(parseOrderText(spaced), [
+    { name: '[사조대림]육식맨의케제크라이너', amount: 4480 },
+    { name: '떼각각]청상추20009', amount: 3940 },
+  ]);
 });
 
 test('parseOrderText: 가격 줄이 없으면 아무것도 안 담는다', () => {
