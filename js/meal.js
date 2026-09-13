@@ -1,11 +1,14 @@
-// 식비 탭: 한 주(월~일)의 아침·점심·저녁·야식 식단. 금액을 넣으면 가계부에도 함께 기록된다.
-// 금액은 이 표에 없다 — 돈을 쓴 끼니는 transactions 행 하나와 1:1 로 연결되고, 조회할 때 m.tx 로 딸려 온다.
+// 식비 탭: 한 주(월~일)의 아침·점심·저녁·야식 식단.
+// 한 끼 = 날짜·끼니·메뉴·누가·어디서 하나씩 + '어떻게' 세트 0..N.
+// 세트 하나가 가계부 거래 한 건과 연결된다. 품목 가격이 원본이고 거래에는 그 합계가 들어간다.
+// 저장은 save_meal RPC 한 번으로 원자적으로 처리한다 (중간에 실패하면 아무것도 안 쓰인다).
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
 import {
   todayLocal, shiftDay, formatWon, parseWon, dayName,
-  MEAL_SLOTS, SLOT_LABEL, weekStart, weekDays, weekLabel, slotOfHour, mealMemo, resolveMealCategoryId,
-  mealAmount, groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByCategory, planMealSave, planMealDelete,
+  MEAL_SLOTS, SLOT_LABEL, weekStart, weekDays, weekLabel, slotOfHour,
+  cleanLines, buyTotal, buyAmount, mealAmount, sortMealBuys, mealSubline,
+  groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
 } from './calc.js';
 import { fetchCategories, addCategory } from './categories.js';
 
@@ -13,10 +16,13 @@ const state = {
   start: '',          // 보고 있는 주의 월요일
   meals: [],          // 직전 주 + 이번 주 (한 번에 받아 온다)
   cats: [],
+  profiles: [],
   userId: null,
-  editing: null,      // 수정 중인 기록, 새 항목이면 null
-  selectedCat: null,
-  pendingTxId: null,  // 거래는 만들었는데 식단 저장이 실패했을 때. 재시도에서 재사용한다
+  editing: null,      // 수정 중인 끼니, 새 항목이면 null
+  placeId: null,
+  sets: [],           // [{ key, id, howId, txId, lines:[{name,amount}], picking }]
+  openKey: null,      // 펼쳐진 세트의 key. null 이면 전부 접힘
+  nextKey: 1,
 };
 
 let el = null;
@@ -32,33 +38,16 @@ export function init({ userId, onTxChange: cb }) {
   state.start = weekStart(todayLocal());
 
   el = {
-    label: $('#meal-label'),
-    prev: $('#meal-prev'),
-    next: $('#meal-next'),
-    thisWeek: $('#meal-this-week'),
-    sum: $('#meal-sum'),
-    sumPrev: $('#meal-sum-prev'),
-    sumDiff: $('#meal-sum-diff'),
-    onboard: $('#meal-onboard'),
-    week: $('#meal-week'),
-    catTotals: $('#meal-cat-totals'),
-    catList: $('#meal-cat-list'),
-    sheet: $('#sheet-meal'),
-    form: $('#meal-form'),
-    id: $('#meal-id'),
-    date: $('#meal-date'),
-    menu: $('#meal-menu'),
-    cats: $('#meal-cats'),
-    newCatRow: $('#meal-new-cat-row'),
-    newCat: $('#meal-new-cat'),
-    newCatOk: $('#meal-new-cat-ok'),
-    amountField: $('#meal-amount-field'),
-    amount: $('#meal-amount'),
-    boughtRow: $('#meal-bought-row'),
-    bought: $('#meal-bought'),
-    catWarn: $('#meal-cat-warn'),
-    save: $('#meal-save'),
-    del: $('#meal-delete'),
+    label: $('#meal-label'), prev: $('#meal-prev'), next: $('#meal-next'), thisWeek: $('#meal-this-week'),
+    sum: $('#meal-sum'), sumPrev: $('#meal-sum-prev'), sumDiff: $('#meal-sum-diff'),
+    onboard: $('#meal-onboard'), week: $('#meal-week'),
+    catTotals: $('#meal-cat-totals'), catList: $('#meal-cat-list'),
+    sheet: $('#sheet-meal'), form: $('#meal-form'), id: $('#meal-id'), date: $('#meal-date'),
+    menu: $('#meal-menu'), who: $('#meal-who'),
+    places: $('#meal-places'), newPlaceRow: $('#meal-new-place-row'),
+    newPlace: $('#meal-new-place'), newPlaceOk: $('#meal-new-place-ok'),
+    total: $('#meal-total'), sets: $('#meal-sets'), setAdd: $('#meal-set-add'),
+    catWarn: $('#meal-cat-warn'), save: $('#meal-save'), del: $('#meal-delete'),
   };
 
   bindSheetBackdrop(el.sheet);
@@ -68,44 +57,21 @@ export function init({ userId, onTxChange: cb }) {
     state.start = weekStart(todayLocal());
     refresh();
   });
-
   el.week.addEventListener('click', onWeekClick);
 
-  el.cats.addEventListener('click', (e) => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    if (chip.dataset.add !== undefined) {
-      el.newCatRow.hidden = false;
-      el.newCat.focus();
-      return;
-    }
-    state.selectedCat = Number(chip.dataset.id);
-    renderChips();
-    if (!isHomeCat(state.selectedCat) && !parseWon(el.amount.value)) {
-      setTimeout(() => el.amount.focus(), 60);
-    }
+  el.places.addEventListener('click', onPlaceClick);
+  el.newPlaceOk.addEventListener('click', createPlace);
+  el.newPlace.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); createPlace(); }
   });
 
-  el.newCatOk.addEventListener('click', createCategoryFromSheet);
-  el.newCat.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      createCategoryFromSheet();
-    }
-  });
+  el.setAdd.addEventListener('click', addSet);
+  el.sets.addEventListener('click', onSetsClick);
+  el.sets.addEventListener('input', onSetsInput);
+  el.sets.addEventListener('keydown', onSetsKeydown);
 
-  el.amount.addEventListener('input', () => {
-    const n = parseWon(el.amount.value);
-    el.amount.value = n ? formatWon(n) : '';
-    updateSaveState();
-  });
   el.menu.addEventListener('input', updateSaveState);
-  el.bought.addEventListener('input', updateSaveState);
-
-  el.form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    save();
-  });
+  el.form.addEventListener('submit', (e) => { e.preventDefault(); save(); });
   el.del.addEventListener('click', remove);
 }
 
@@ -119,42 +85,53 @@ function moveWeek(delta) {
   refresh();
 }
 
+const sheetOpen = () => el.sheet.classList.contains('open');
+
 export async function refresh() {
+  // 시트를 열어 둔 동안에는 다시 그리지 않는다 (상대가 저장하면 입력 중이던 값이 날아간다).
+  if (sheetOpen()) return;
+
   const days = weekDays(state.start);
   const from = shiftDay(state.start, -7); // 직전 주까지 한 번에 받아 비교에 쓴다
-  const to = days[6];
   try {
-    const [cats, meals] = await Promise.all([
+    const [cats, profiles, meals] = await Promise.all([
       fetchCategories(),
+      sb.from('profiles').select('id,name,color').then(unwrap),
       sb
         .from('meals')
-        .select('*, tx:transactions(id, kind, amount, date, category_id, memo)')
+        .select(`id, date, slot, menu, eater, place_id, created_at, created_by,
+                 buys:meal_buys(id, how_id, lines, transaction_id, sort_order, created_at,
+                                tx:transactions(id, kind, amount, date, category_id, memo))`)
         .gte('date', from)
-        .lte('date', to)
+        .lte('date', days[6])
         .order('date', { ascending: true })
         .order('created_at', { ascending: true })
         .then(unwrap),
     ]);
     state.cats = cats;
-    state.meals = meals;
+    state.profiles = profiles;
+    state.meals = meals.map((m) => ({ ...m, buys: sortMealBuys(m.buys) }));
     render();
   } catch (err) {
     console.error(err);
-    el.week.innerHTML = missingTable(err)
-      ? `<p class="empty">식비 표가 아직 없어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 21번 섹션을 실행해 주세요.</p>`
+    el.week.innerHTML = needsSql(err)
+      ? `<p class="empty">식비 표가 아직 준비되지 않았어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 23번 섹션을 실행해 주세요.</p>`
       : `<div class="retry">불러오지 못했어요<br>
           <button type="button" class="btn small" data-retry>다시 시도</button>
         </div>`;
   }
 }
 
-// 아직 SQL 을 실행하지 않아 meals 표가 없는 상태인지.
-function missingTable(err) {
+// 아직 SQL 을 실행하지 않은 상태인지. 표가 없을 때(PGRST205)와 관계가 없을 때(PGRST200) 둘 다.
+function needsSql(err) {
   const m = `${err?.message ?? ''} ${err?.code ?? ''}`;
-  return /does not exist|could not find the table|42P01|PGRST205/i.test(m);
+  return /does not exist|could not find the table|could not find a relationship|42P01|PGRST205|PGRST200/i.test(m);
 }
 
-// ---- 렌더 -----------------------------------------------------------------
+const catsOf = (kind) => state.cats.filter((c) => c.kind === kind);
+const nameOf = (id) => state.cats.find((c) => c.id === id)?.name ?? '';
+
+// ---- 주간 화면 -------------------------------------------------------------
 
 function render() {
   const days = weekDays(state.start);
@@ -166,10 +143,9 @@ function render() {
   el.thisWeek.hidden = state.start === weekStart(todayLocal());
 
   const sum = sumMeals(week);
-  const prevSum = sumMeals(prev);
-  const diff = sum.total - prevSum.total;
+  const diff = sum.total - sumMeals(prev).total;
   animateNumber(el.sum, sum.total, formatWon);
-  animateNumber(el.sumPrev, prevSum.total, formatWon);
+  animateNumber(el.sumPrev, sumMeals(prev).total, formatWon);
   animateNumber(el.sumDiff, diff, (n) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${formatWon(Math.abs(n))}`);
   el.sumDiff.classList.toggle('income', diff < 0); // 덜 썼으면 파랑
 
@@ -177,7 +153,7 @@ function render() {
 
   const byDate = sumMealsByDate(week);
   const grouped = groupMealsBySlot(week);
-  const catName = new Map(state.cats.map((c) => [c.id, c.name]));
+  const who = new Map(state.profiles.map((p) => [p.id, p.name]));
   const today = todayLocal();
   let i = 0;
 
@@ -187,7 +163,7 @@ function render() {
       const body = MEAL_SLOTS.map((slot) => {
         const items = grouped.get(`${date}|${slot}`) ?? [];
         if (!items.length) return emptyRow(date, slot, i++);
-        return items.map((m, k) => mealRow(m, slot, k === 0, k === items.length - 1, catName, i++)).join('');
+        return items.map((m, k) => mealRow(m, slot, k === 0, k === items.length - 1, who, i++)).join('');
       }).join('');
       return `
         <div class="card day-card">
@@ -200,23 +176,23 @@ function render() {
     })
     .join('');
 
-  const byCat = sumMealsByCategory(week, state.cats);
+  const byHow = sumMealsByHow(week, state.cats);
   el.catTotals.hidden = !week.length;
-  el.catList.innerHTML = byCat
-    .map((c) => `<li><span>${escapeHtml(c.name)}</span><span>${c.total ? formatWon(c.total) : `${c.count}끼`}</span></li>`)
+  el.catList.innerHTML = byHow
+    .map((c) => `<li><span>${escapeHtml(c.name)}</span><span>${c.total ? formatWon(c.total) : `${c.count}건`}</span></li>`)
     .join('');
 }
 
-function mealRow(m, slot, first, last, catName, i) {
+function mealRow(m, slot, first, last, who, i) {
   const amount = mealAmount(m);
-  const cat = catName.get(m.category_id) ?? '';
-  const title = (m.menu || m.bought || cat || '기록').trim();
-  const sub = [cat, m.menu && m.bought ? m.bought : ''].filter(Boolean).join(' · ');
+  const title = (m.menu || m.buys.flatMap((b) => cleanLines(b.lines).map((l) => l.name)).filter(Boolean).join(', ') || nameOf(m.place_id) || '기록').trim();
+  const sub = mealSubline(nameOf(m.place_id), m.buys.map((b) => nameOf(b.how_id)));
+  const tag = m.eater ? `<span class="tag">${escapeHtml(who.get(m.eater) ?? '혼자')}</span>` : '';
   return `
     <div class="tx-row meal-row" data-id="${m.id}" style="--i:${Math.min(i, 12)}">
       <div class="meal-slot">${first ? SLOT_LABEL[slot] ?? '' : ''}</div>
       <div class="tx-main">
-        <div class="tx-cat">${escapeHtml(title)}</div>
+        <div class="tx-cat">${escapeHtml(title)}${tag}</div>
         ${sub ? `<div class="tx-memo">${escapeHtml(sub)}</div>` : ''}
       </div>
       <div class="tx-amount">${amount ? formatWon(amount) : ''}</div>
@@ -236,20 +212,11 @@ function emptyRow(date, slot, i) {
 }
 
 function onWeekClick(e) {
-  if (e.target.closest('[data-retry]')) {
-    refresh();
-    return;
-  }
+  if (e.target.closest('[data-retry]')) { refresh(); return; }
   const add = e.target.closest('.slot-add');
-  if (add?.dataset.date) {
-    openMealSheet(null, { date: add.dataset.date, slot: add.dataset.slot });
-    return;
-  }
+  if (add?.dataset.date) { openMealSheet(null, { date: add.dataset.date, slot: add.dataset.slot }); return; }
   const empty = e.target.closest('.empty-slot');
-  if (empty) {
-    openMealSheet(null, { date: empty.dataset.date, slot: empty.dataset.slot });
-    return;
-  }
+  if (empty) { openMealSheet(null, { date: empty.dataset.date, slot: empty.dataset.slot }); return; }
   const row = e.target.closest('.meal-row');
   if (row?.dataset.id) openMealSheet(state.meals.find((m) => m.id === Number(row.dataset.id)));
 }
@@ -274,197 +241,292 @@ function firstFreeSlot(date, from) {
 
 function openMealSheet(m, preset = {}) {
   state.editing = m ?? null;
-  state.pendingTxId = null;
 
   el.id.value = m?.id ?? '';
   el.date.value = m?.date ?? preset.date ?? todayLocal();
   const slot = m?.slot ?? preset.slot ?? 'lunch';
-  const radio = el.form.querySelector(`input[name="meal-slot"][value="${slot}"]`);
-  if (radio) radio.checked = true;
-
+  el.form.querySelector(`input[name="meal-slot"][value="${slot}"]`)?.setAttribute('checked', 'checked');
+  el.form.querySelectorAll('input[name="meal-slot"]').forEach((r) => { r.checked = r.value === slot; });
   el.menu.value = m?.menu ?? '';
-  el.bought.value = m?.bought ?? '';
-  const amount = m ? mealAmount(m) : 0;
-  el.amount.value = amount ? formatWon(amount) : '';
 
-  state.selectedCat = m?.category_id ?? defaultMealCat();
+  state.placeId = m?.place_id ?? defaultPlaceId();
+  state.nextKey = 1;
+  state.sets = (m?.buys ?? []).map((b) => ({
+    key: state.nextKey++,
+    id: b.id,
+    howId: b.how_id,
+    txId: b.transaction_id,
+    lines: cleanLines(b.lines),
+    picking: false,
+  }));
+  state.openKey = null;
+
+  renderWho(m?.eater ?? null);
+  renderPlaces();
+  renderSets();
   el.del.hidden = !m;
-  el.newCatRow.hidden = true;
-  el.newCat.value = '';
-  renderChips(); // 안에서 금액·산 것 표시 여부와 저장 버튼 상태까지 맞춘다
+  el.newPlaceRow.hidden = true;
+  el.newPlace.value = '';
+  el.catWarn.hidden = state.cats.some((c) => c.kind === 'expense' && c.name === '식비');
+  updateSaveState();
 
   openSheet(el.sheet);
   if (!m) setTimeout(() => el.menu.focus(), 250);
 }
 
-// '집밥' 은 돈을 안 쓴 끼니라는 뜻이라 금액·산 것 칸을 숨긴다.
-// 사용자가 이름을 바꾸면 평범한 카테고리가 되고 금액 칸이 늘 보인다 (기능은 안 깨진다).
-function isHomeCat(id) {
-  return state.cats.some((c) => c.id === id && c.kind === 'meal' && c.name === '집밥');
-}
-
-function defaultMealCat() {
-  const meal = state.cats.filter((c) => c.kind === 'meal');
-  return (meal.find((c) => c.name === '집밥') ?? meal[0])?.id ?? null;
-}
-
-function renderChips() {
-  const chips = state.cats
-    .filter((c) => c.kind === 'meal')
+// 할일·일정·고정비의 '누구' 라디오와 같은 패턴. 앞머리만 '같이'.
+function renderWho(selected) {
+  const options = [{ id: '', name: '같이' }, ...state.profiles];
+  el.who.innerHTML = options
     .map(
-      (c) =>
-        `<button type="button" class="chip ${c.id === state.selectedCat ? 'selected' : ''}" data-id="${c.id}">${escapeHtml(c.name)}</button>`,
-    );
-  chips.push('<button type="button" class="chip add" data-add>＋ 새 카테고리</button>');
-  el.cats.innerHTML = chips.join('');
-  syncMoneyFields();
+      (o) => `<label><input type="radio" name="meal-who" value="${o.id}"${String(selected ?? '') === String(o.id) ? ' checked' : ''}><span>${escapeHtml(o.name)}</span></label>`,
+    )
+    .join('');
 }
 
-function syncMoneyFields() {
-  const home = isHomeCat(state.selectedCat);
-  el.amountField.hidden = home;
-  el.boughtRow.hidden = home;
-  if (home) el.amount.value = '';
-  el.catWarn.hidden = home || state.cats.some((c) => c.kind === 'expense' && c.name === '식비');
+function defaultPlaceId() {
+  const places = catsOf('meal_where');
+  return (places.find((c) => c.name === '집') ?? places[0])?.id ?? null;
+}
+
+function renderPlaces() {
+  el.places.innerHTML = catsOf('meal_where')
+    .map((c) => `<button type="button" class="chip ${c.id === state.placeId ? 'selected' : ''}" data-id="${c.id}">${escapeHtml(c.name)}</button>`)
+    .join('') + '<button type="button" class="chip add" data-add>＋</button>';
+}
+
+function onPlaceClick(e) {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  if (chip.dataset.add !== undefined) {
+    el.newPlaceRow.hidden = false;
+    el.newPlace.focus();
+    return;
+  }
+  state.placeId = Number(chip.dataset.id);
+  renderPlaces();
+}
+
+async function createPlace() {
+  const name = el.newPlace.value;
+  if (!name.trim()) return;
+  try {
+    const created = await addCategory(name, 'meal_where', state.cats);
+    state.cats = await fetchCategories();
+    state.placeId = created.id;
+    el.newPlace.value = '';
+    el.newPlaceRow.hidden = true;
+    renderPlaces();
+  } catch (err) {
+    console.error(err);
+    toast('장소를 추가하지 못했어요');
+  }
+}
+
+// ---- 세트(어떻게 + 품목들) --------------------------------------------------
+
+function addSet() {
+  commitOpenSet();
+  const key = state.nextKey++;
+  state.sets.push({ key, id: null, howId: null, txId: null, lines: [], picking: true });
+  state.openKey = key;
+  renderSets();
+  el.sets.querySelector(`[data-key="${key}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+
+function renderSets() {
+  el.sets.innerHTML = state.sets.map((s) => (s.key === state.openKey ? openSetHtml(s) : collapsedSetHtml(s))).join('');
+  recalcSums();
   updateSaveState();
 }
 
-function updateSaveState() {
-  const filled = el.menu.value.trim() || (!el.boughtRow.hidden && el.bought.value.trim()) || readAmount() > 0;
-  el.save.disabled = !filled;
+function openSetHtml(s) {
+  if (s.picking || !s.howId) {
+    return `
+      <div class="meal-set" data-key="${s.key}">
+        <div class="chips">
+          ${catsOf('meal_how').map((c) => `<button type="button" class="chip ${c.id === s.howId ? 'selected' : ''}" data-act="pick" data-id="${c.id}">${escapeHtml(c.name)}</button>`).join('')}
+        </div>
+      </div>`;
+  }
+  const lines = [...s.lines, { name: '', amount: 0 }]; // 맨 끝에는 항상 빈 줄
+  return `
+    <div class="meal-set" data-key="${s.key}">
+      <div class="row">
+        <div class="chips"><button type="button" class="chip selected" data-act="repick">${escapeHtml(nameOf(s.howId))} ▾</button></div>
+        <span class="set-sum muted">${buyTotal(s) ? formatWon(buyTotal(s)) : ''}</span>
+        <button type="button" class="icon-btn" data-act="del-set" aria-label="이 세트 지우기">✕</button>
+      </div>
+      <div class="set-items">
+        ${lines.map((l, k) => itemRowHtml(l, k === lines.length - 1)).join('')}
+      </div>
+    </div>`;
 }
 
-function readAmount() {
-  return el.amountField.hidden ? 0 : parseWon(el.amount.value);
+function itemRowHtml(line, last) {
+  return `
+    <div class="row">
+      <input type="text" data-role="name" placeholder="품목 (선택)" maxlength="40" autocomplete="off"
+             enterkeyhint="next" value="${escapeHtml(line.name ?? '')}">
+      <input type="text" data-role="price" class="price" inputmode="numeric" placeholder="0" autocomplete="off"
+             enterkeyhint="next" value="${line.amount ? formatWon(line.amount) : ''}">
+      <button type="button" class="icon-btn" data-act="del-item" aria-label="이 품목 지우기"${last ? ' style="visibility:hidden"' : ''}>✕</button>
+    </div>`;
 }
+
+function collapsedSetHtml(s) {
+  const names = cleanLines(s.lines).map((l) => l.name).filter(Boolean);
+  const sub = names.length > 1 ? `${names[0]} 외 ${names.length - 1}` : names[0] ?? '';
+  return `
+    <div class="tx-row meal-row" data-key="${s.key}" data-act="open-set">
+      <div class="tx-main">
+        <div class="tx-cat">${escapeHtml(nameOf(s.howId) || '어떻게?')}</div>
+        ${sub ? `<div class="tx-memo">${escapeHtml(sub)}</div>` : ''}
+      </div>
+      <div class="tx-amount">${buyTotal(s) ? formatWon(buyTotal(s)) : ''}</div>
+      <button type="button" class="icon-btn" data-act="del-set" aria-label="이 세트 지우기">✕</button>
+    </div>`;
+}
+
+// 펼친 세트의 입력칸 값을 state 로 옮긴다. 구조가 바뀌기 전에 반드시 부른다.
+function commitOpenSet() {
+  const box = el.sets.querySelector(`.meal-set[data-key="${state.openKey}"]`);
+  if (!box) return;
+  const s = state.sets.find((x) => x.key === state.openKey);
+  if (!s) return;
+  s.lines = [...box.querySelectorAll('.set-items .row')].map((row) => ({
+    name: row.querySelector('[data-role="name"]').value,
+    amount: parseWon(row.querySelector('[data-role="price"]').value),
+  }));
+}
+
+function onSetsClick(e) {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  const key = Number(e.target.closest('[data-key]')?.dataset.key);
+  const s = state.sets.find((x) => x.key === key);
+
+  if (act === 'del-item') {
+    commitOpenSet();
+    const rows = [...e.target.closest('.set-items').children];
+    s.lines.splice(rows.indexOf(e.target.closest('.row')), 1);
+    renderSets();
+    return;
+  }
+  if (act === 'del-set') {
+    if (s.txId && !confirmDialog(`이 지출을 지우면 가계부의 ${formatWon(buyTotal(s))}원도 함께 사라져요. 지울까요?`)) return;
+    if (state.openKey === key) state.openKey = null;
+    else commitOpenSet();
+    state.sets = state.sets.filter((x) => x.key !== key);
+    renderSets();
+    return;
+  }
+  if (act === 'pick') {
+    s.howId = Number(e.target.closest('[data-id]').dataset.id);
+    s.picking = false;
+    renderSets();
+    el.sets.querySelector(`[data-key="${key}"] [data-role="name"]`)?.focus();
+    return;
+  }
+  if (act === 'repick') { s.picking = true; renderSets(); return; }
+  if (act === 'open-set') {
+    commitOpenSet();
+    state.openKey = key;
+    renderSets();
+  }
+}
+
+// 타이핑 중에는 다시 그리지 않는다 — 포커스와 캐럿을 지키려고 DOM 을 직접 손본다.
+function onSetsInput(e) {
+  const input = e.target;
+  if (input.dataset.role === 'price') {
+    const n = parseWon(input.value);
+    input.value = n ? formatWon(n) : '';
+  }
+  const items = input.closest('.set-items');
+  if (items && input.closest('.row') === items.lastElementChild && (input.value.trim() || parseWon(input.value))) {
+    items.insertAdjacentHTML('beforeend', itemRowHtml({ name: '', amount: 0 }, true));
+    items.lastElementChild.previousElementSibling.querySelector('[data-act="del-item"]').style.visibility = '';
+  }
+  commitOpenSet();
+  recalcSums();
+  updateSaveState();
+}
+
+// 폼 안의 Enter 는 암시적 제출이라 그냥 두면 저장이 눌린다. 다음 칸으로 넘긴다.
+function onSetsKeydown(e) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const row = e.target.closest('.row');
+  if (e.target.dataset.role === 'name') { row.querySelector('[data-role="price"]').focus(); return; }
+  const next = row.nextElementSibling;
+  if (next) next.querySelector('[data-role="name"]').focus();
+}
+
+function recalcSums() {
+  let total = 0;
+  for (const s of state.sets) {
+    const t = buyTotal(s);
+    total += t;
+    const box = el.sets.querySelector(`[data-key="${s.key}"]`);
+    const out = box?.querySelector('.set-sum') ?? box?.querySelector('.tx-amount');
+    if (out) out.textContent = t ? formatWon(t) : '';
+  }
+  el.total.textContent = total ? formatWon(total) : '';
+}
+
+// ---- 저장·삭제 ------------------------------------------------------------
 
 function readSheet() {
+  commitOpenSet();
   return {
     date: el.date.value,
     slot: el.form.querySelector('input[name="meal-slot"]:checked')?.value ?? 'lunch',
     menu: el.menu.value,
-    bought: el.boughtRow.hidden ? '' : el.bought.value,
-    categoryId: state.selectedCat,
-    amount: readAmount(),
+    eater: el.form.querySelector('input[name="meal-who"]:checked')?.value || null, // '' → null (uuid 컬럼)
+    placeId: state.placeId,
+    buys: state.sets.map((s) => ({ id: s.id, howId: s.howId, transactionId: s.txId, lines: s.lines })),
   };
 }
 
-async function createCategoryFromSheet() {
-  const name = el.newCat.value;
-  if (!name.trim()) return;
-  try {
-    const created = await addCategory(name, 'meal', state.cats);
-    state.cats = await fetchCategories();
-    state.selectedCat = created.id;
-    el.newCat.value = '';
-    el.newCatRow.hidden = true;
-    renderChips();
-  } catch (err) {
-    console.error(err);
-    toast('카테고리를 추가하지 못했어요');
-  }
+function updateSaveState() {
+  const hasSet = state.sets.some((s) => s.howId && cleanLines(s.lines).length);
+  el.save.disabled = !(el.menu.value.trim() || hasSet);
 }
-
-// ---- 저장·삭제 ------------------------------------------------------------
-// 순서는 언제나 "가계부 먼저, 식단 나중". 중간에 실패해도 금액이 조용히 사라지지 않고,
-// 가계부에 눈에 보이는 행이 남아 사용자가 직접 지울 수 있다.
 
 async function save() {
   const input = readSheet();
-  if (!input.menu.trim() && !input.bought.trim() && input.amount <= 0) return;
-
-  const before = state.editing;
-  if (
-    before?.transaction_id &&
-    input.amount <= 0 &&
-    !confirmDialog('금액을 지우면 가계부의 이 지출도 함께 사라져요. 계속할까요?')
-  ) return;
-
-  const catName = state.cats.find((c) => c.id === input.categoryId)?.name ?? '';
-  const memo = mealMemo({ slot: input.slot, menu: input.menu, bought: input.bought, cat: catName });
-  const plan = planMealSave(before, input, {
-    categoryId: resolveMealCategoryId(state.cats, before?.tx ?? null),
-    memo,
-  });
+  if (!input.menu.trim() && !input.buys.some((b) => cleanLines(b.lines).length)) return;
 
   el.save.disabled = true;
-  let txId = state.pendingTxId;   // 직전 시도에서 이미 만든 거래가 있으면 재사용한다
-  let created = txId != null;     // 이번 저장 흐름에서 우리가 만든 거래인가
   try {
-    // 1단계: 가계부
-    if (plan.tx.op === 'insert') {
-      if (txId == null) {
-        txId = await insertTx(plan.tx.payload);
-        created = true;
-      } else {
-        unwrap(await sb.from('transactions').update(plan.tx.payload).eq('id', txId).select('id'));
-      }
-    } else if (plan.tx.op === 'update') {
-      // update 는 0행을 고쳐도 에러가 아니다. 가계부에서 이미 지워졌으면 새로 만들고 다시 연결한다.
-      const rows = unwrap(await sb.from('transactions').update(plan.tx.payload).eq('id', plan.tx.id).select('id'));
-      if (!rows.length) {
-        txId = await insertTx(plan.tx.payload);
-        created = true;
-        plan.meal.link = 'new';
-      }
-    } else if (plan.tx.op === 'delete') {
-      unwrap(await sb.from('transactions').delete().eq('id', plan.tx.id));
-    }
-
-    // 2단계: 식단
-    const link =
-      plan.meal.link === 'new' ? { transaction_id: txId }
-      : plan.meal.link === 'null' ? { transaction_id: null }
-      : {};
-    const row = { ...plan.meal.patch, ...link };
-    if (plan.meal.op === 'insert') unwrap(await sb.from('meals').insert({ ...row, created_by: state.userId }));
-    else unwrap(await sb.from('meals').update(row).eq('id', plan.meal.id));
-
-    state.pendingTxId = null;
+    unwrap(await sb.rpc('save_meal', { p: planMealSave(state.editing, input, state.cats) }));
     haptic();
     closeSheet(el.sheet);
     state.start = weekStart(input.date); // 저장한 날이 든 주로 옮긴다
     await refresh();
-    if (plan.tx.op !== 'none') onTxChange();
+    onTxChange();
   } catch (err) {
     console.error(err);
-    // 이번 저장에서 새로 만든 거래만 되돌린다. 남의 거래를 지우지 않는다.
-    if (created && txId != null) {
-      const { error } = await sb.from('transactions').delete().eq('id', txId);
-      state.pendingTxId = error ? txId : null;
-    }
-    toast(
-      state.pendingTxId
-        ? '가계부에는 기록됐지만 식단 저장에 실패했어요. 다시 저장해 주세요'
-        : '저장에 실패했어요. 다시 시도해 주세요',
-    );
+    toast(needsSql(err) ? 'SQL 의 23번 섹션을 먼저 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
   } finally {
     el.save.disabled = false;
   }
 }
 
-async function insertTx(payload) {
-  const row = unwrap(
-    await sb.from('transactions').insert({ ...payload, created_by: state.userId }).select('id').single(),
-  );
-  state.pendingTxId = row.id;
-  return row.id;
-}
-
 async function remove() {
   if (!state.editing) return;
-  const plan = planMealDelete(state.editing);
+  const { mealId, txIds } = planMealDelete(state.editing);
   const amount = mealAmount(state.editing);
-  const msg = amount
-    ? `이 기록을 지우면 가계부의 ${formatWon(amount)}원 지출도 함께 사라져요. 지울까요?`
+  const msg = txIds.length
+    ? `이 기록을 지우면 가계부의 ${txIds.length}건 ${formatWon(amount)}원도 함께 사라져요. 지울까요?`
     : '이 기록을 지울까요?';
   if (!confirmDialog(msg)) return;
   try {
-    if (plan.tx.op === 'delete') unwrap(await sb.from('transactions').delete().eq('id', plan.tx.id));
-    unwrap(await sb.from('meals').delete().eq('id', plan.meal.id));
+    // 세트는 cascade 로, 거래는 meal_buys 삭제 트리거로 함께 지워진다.
+    unwrap(await sb.from('meals').delete().eq('id', mealId));
     closeSheet(el.sheet);
     await refresh();
-    if (plan.tx.op !== 'none') onTxChange();
+    if (txIds.length) onTxChange();
   } catch (err) {
     console.error(err);
     toast('삭제에 실패했어요. 다시 시도해 주세요');

@@ -10,7 +10,7 @@ import * as push from './push.js';
 import * as anniv from './anniv.js';
 import * as meal from './meal.js';
 
-const APP_VERSION = 'v17'; // sw.js 의 CACHE 버전과 맞춘다
+const APP_VERSION = 'v18'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -172,6 +172,7 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => fixed.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'anniversaries' }, () => home.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'meals' }, () => meal.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_buys' }, () => { meal.refresh(); ledger.refresh(); })
     .subscribe();
 }
 

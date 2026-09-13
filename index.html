@@ -140,7 +140,7 @@
       <div id="meal-week"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
 
       <details id="meal-cat-totals" class="card" hidden>
-        <summary>카테고리별 식비</summary>
+        <summary>어떻게별 식비</summary>
         <ul id="meal-cat-list" class="plain-list"></ul>
       </details>
     </section>
@@ -313,25 +313,27 @@
         <label><input type="radio" name="meal-slot" value="night"><span>야식</span></label>
       </div>
 
-      <input id="meal-menu" type="text" placeholder="뭐 먹었어요? (예: 제육덮밥, 만두)" maxlength="120" autocomplete="off">
+      <input id="meal-menu" type="text" placeholder="뭐 먹었어요? (예: 제육덮밥, 만두)"
+             maxlength="120" autocomplete="off" enterkeyhint="done">
+
+      <div>
+        <div class="field-label">누가</div>
+        <div id="meal-who" class="seg"></div>
+      </div>
 
       <div>
         <div class="field-label">어디서</div>
-        <div id="meal-cats" class="chips"></div>
-        <div id="meal-new-cat-row" class="row" hidden style="margin-top:8px">
-          <input id="meal-new-cat" type="text" placeholder="새 카테고리 이름" maxlength="20">
-          <button type="button" id="meal-new-cat-ok" class="btn small">추가</button>
+        <div id="meal-places" class="chips"></div>
+        <div id="meal-new-place-row" class="row" hidden style="margin-top:8px">
+          <input id="meal-new-place" type="text" placeholder="새 장소 이름" maxlength="20">
+          <button type="button" id="meal-new-place-ok" class="btn small">추가</button>
         </div>
       </div>
 
-      <label class="amount-field" id="meal-amount-field" hidden>
-        <span class="won">₩</span>
-        <input id="meal-amount" type="text" inputmode="numeric" placeholder="0" autocomplete="off">
-      </label>
-
-      <div id="meal-bought-row" hidden>
-        <div class="field-label">산 것</div>
-        <input id="meal-bought" type="text" placeholder="예: 삼겹살 600g, 우유, 계란" maxlength="120" autocomplete="off">
+      <div>
+        <div class="field-label row"><span>쓴 돈</span><span id="meal-total" class="tx-amount"></span></div>
+        <div id="meal-sets"></div>
+        <div class="chips"><button type="button" class="chip add" id="meal-set-add">＋ 세트 추가</button></div>
       </div>
 
       <p id="meal-cat-warn" class="hint" hidden>가계부에 '식비' 카테고리가 없어서 미분류로 기록돼요.</p>

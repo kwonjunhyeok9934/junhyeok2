@@ -315,6 +315,183 @@ select * from (values
 ) as v(name, kind, sort_order)
 where not exists (select 1 from categories where kind = 'meal');
 
+-- 23. 식비 1:N — 누가·어디서 + '어떻게' 세트(품목별 가격) ---------------------------
+-- 21번은 "한 끼 = 지출 한 건" 이었다. 실제로는 한 끼에 마트에서 산 재료 + 컬리에서 시킨
+-- 재료가 섞이므로 "한 끼 = 구입 여러 건, 구입 한 건 = 품목 여러 줄" 로 바꾼다.
+-- 21번을 이미 실행한 사람도, 처음 실행하는 사람도 이 섹션만 돌리면 같은 상태가 된다.
+--
+-- 금액은 품목(meal_buys.lines)이 원본이고, 가계부 거래에는 그 합계가 들어간다.
+-- 세트 하나 : 거래 하나. 세트 합계가 0이면 거래를 만들지 않는다(transactions.amount > 0).
+
+-- 끼니에 '누가'(null = 같이) 와 '어디서'.  where 는 예약어라 place_id 로 쓴다.
+alter table meals add column if not exists eater    uuid   references auth.users(id) on delete set null;
+alter table meals add column if not exists place_id bigint references categories(id) on delete set null;
+
+-- 21번의 1:1 연결 흔적을 뗀다 (기록이 없으므로 그냥 버린다).
+alter table meals drop column if exists transaction_id;
+alter table meals drop column if exists category_id;
+alter table meals drop column if exists bought;
+
+-- '어떻게' 세트. 한 끼에 0개도, 여러 개도 된다.
+create table if not exists meal_buys (
+  id             bigint generated always as identity primary key,
+  meal_id        bigint not null references meals(id) on delete cascade,
+  how_id         bigint references categories(id) on delete set null,   -- kind='meal_how'
+  lines          jsonb not null default '[]'::jsonb,   -- [{"name":"삼겹살 600g","amount":12000}, ...]
+  transaction_id bigint references transactions(id) on delete set null,
+  sort_order     integer not null default 0,
+  created_by     uuid not null references auth.users(id),
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists meal_buys_meal_id_idx on meal_buys (meal_id);
+-- 한 거래를 두 세트가 가리키면 합계가 두 번 잡힌다. null 은 여러 개 허용된다.
+create unique index if not exists meal_buys_transaction_id_key on meal_buys (transaction_id);
+
+alter table meal_buys enable row level security;
+drop policy if exists "auth all" on meal_buys;
+create policy "auth all" on meal_buys for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'meal_buys') then
+    alter publication supabase_realtime add table meal_buys;
+  end if;
+end $$;
+
+-- 세트가 사라지면 그 거래도 사라진다.
+-- 끼니를 지워 cascade 로 세트가 지워질 때도 이 트리거가 돌기 때문에 고아 거래가 생길 수 없다.
+-- AFTER 여야 한다: BEFORE 에서 지우면 FK on delete set null 이 지금 지워지는 중인 행을 건드린다.
+create or replace function meal_buy_drop_tx() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.transaction_id is not null then
+    delete from transactions where id = old.transaction_id;
+  end if;
+  return null;
+end $$;
+
+drop trigger if exists meal_buys_after_delete on meal_buys;
+create trigger meal_buys_after_delete after delete on meal_buys
+  for each row execute function meal_buy_drop_tx();
+
+-- 카테고리 종류를 '어디서'와 '어떻게' 로 나눈다.
+alter table categories drop constraint if exists categories_kind_check;
+alter table categories add constraint categories_kind_check
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how'));
+
+-- 21번이 넣은 kind='meal' 은 '어떻게' 였다. '집밥' 은 '어디서=집' 이 대신하므로 뺀다.
+delete from categories c
+where c.kind = 'meal' and c.name = '집밥'
+  and not exists (select 1 from meal_buys b where b.how_id = c.id);
+update categories set kind = 'meal_how' where kind = 'meal';
+
+-- 이미 있는 것은 건너뛰고 없는 것만 채운다 (21번을 먼저 실행한 사람과 상태를 맞추기 위해
+-- 표 전체가 아니라 '이름 단위' 로 가드한다).
+insert into categories (name, kind, sort_order)
+select v.name, 'meal_where', v.sort_order
+from (values ('집', 10), ('회사', 20), ('외식', 30)) as v(name, sort_order)
+where not exists (select 1 from categories c where c.kind = 'meal_where' and c.name = v.name);
+
+insert into categories (name, kind, sort_order)
+select v.name, 'meal_how', v.sort_order
+from (values ('컬리', 10), ('쿠팡', 20), ('윙잇', 30), ('배달', 40),
+             ('포장', 50), ('외식', 60), ('마트', 70), ('편의점', 80)) as v(name, sort_order)
+where not exists (select 1 from categories c where c.kind = 'meal_how' and c.name = v.name);
+
+-- 21번을 먼저 실행한 사람과 칩 순서를 같게 맞춘다.
+update categories c set sort_order = v.sort_order
+from (values ('컬리', 10), ('쿠팡', 20), ('윙잇', 30), ('배달', 40),
+             ('포장', 50), ('외식', 60), ('마트', 70), ('편의점', 80)) as v(name, sort_order)
+where c.kind = 'meal_how' and c.name = v.name and c.sort_order is distinct from v.sort_order;
+
+-- 한 번에 전부 되거나, 하나도 안 되거나.
+-- 무엇을 할지는 js/calc.js 의 planMealSave 가 정하고 이 함수는 그대로 실행만 한다.
+-- (정책이 한 줄도 없으므로 앱을 고쳐도 이 함수는 다시 실행할 일이 없다.)
+create or replace function save_meal(p jsonb) returns bigint
+language plpgsql as $$
+declare
+  v_meal bigint := nullif(p -> 'meal' ->> 'id', '')::bigint;
+  v_user uuid   := auth.uid();
+  m      jsonb  := p -> 'meal' -> 'patch';
+  s      jsonb;
+  t      jsonb;
+  v_tx   bigint;
+  v_buy  bigint;
+begin
+  if v_meal is null then
+    insert into meals (date, slot, menu, eater, place_id, created_by)
+    values ((m ->> 'date')::date, m ->> 'slot', coalesce(m ->> 'menu', ''),
+            nullif(m ->> 'eater', '')::uuid, nullif(m ->> 'place_id', '')::bigint, v_user)
+    returning id into v_meal;
+  else
+    update meals set date = (m ->> 'date')::date, slot = m ->> 'slot', menu = coalesce(m ->> 'menu', ''),
+                     eater = nullif(m ->> 'eater', '')::uuid, place_id = nullif(m ->> 'place_id', '')::bigint
+    where id = v_meal;
+    if not found then   -- 다른 기기에서 이미 지웠다 → 새로 만든다
+      insert into meals (date, slot, menu, eater, place_id, created_by)
+      values ((m ->> 'date')::date, m ->> 'slot', coalesce(m ->> 'menu', ''),
+              nullif(m ->> 'eater', '')::uuid, nullif(m ->> 'place_id', '')::bigint, v_user)
+      returning id into v_meal;
+    end if;
+  end if;
+
+  -- 화면에서 뺀 세트만 지운다 (트리거가 그 거래까지 지운다).
+  -- "payload 에 없는 건 다 지운다" 로 하면 다른 폰에서 방금 추가한 세트를 조용히 날린다.
+  delete from meal_buys
+  where meal_id = v_meal
+    and id in (select value::bigint from jsonb_array_elements_text(coalesce(p -> 'removed', '[]'::jsonb)));
+
+  for s in select * from jsonb_array_elements(coalesce(p -> 'buys', '[]'::jsonb)) loop
+    t    := s -> 'tx';
+    v_tx := nullif(t ->> 'id', '')::bigint;
+
+    if t ->> 'op' = 'insert' then
+      insert into transactions (kind, amount, category_id, date, memo, created_by)
+      values ('expense', (t -> 'payload' ->> 'amount')::int,
+              nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+              (t -> 'payload' ->> 'date')::date, t -> 'payload' ->> 'memo', v_user)
+      returning id into v_tx;
+    elsif t ->> 'op' = 'update' then
+      update transactions set kind = 'expense', amount = (t -> 'payload' ->> 'amount')::int,
+             category_id = nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+             date = (t -> 'payload' ->> 'date')::date, memo = t -> 'payload' ->> 'memo'
+      where id = v_tx;
+      if not found then   -- 가계부에서 지워진 거래 → 새로 만들어 다시 연결한다
+        insert into transactions (kind, amount, category_id, date, memo, created_by)
+        values ('expense', (t -> 'payload' ->> 'amount')::int,
+                nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+                (t -> 'payload' ->> 'date')::date, t -> 'payload' ->> 'memo', v_user)
+        returning id into v_tx;
+      end if;
+    elsif t ->> 'op' = 'delete' then
+      delete from transactions where id = v_tx;   -- FK 가 세트의 연결을 끊는다
+      v_tx := null;
+    end if;
+
+    v_buy := nullif(s ->> 'id', '')::bigint;
+    if v_buy is null then
+      insert into meal_buys (meal_id, how_id, lines, transaction_id, sort_order, created_by)
+      values (v_meal, nullif(s -> 'patch' ->> 'how_id', '')::bigint, s -> 'patch' -> 'lines',
+              v_tx, coalesce((s -> 'patch' ->> 'sort_order')::int, 0), v_user);
+    else
+      update meal_buys
+         set how_id = nullif(s -> 'patch' ->> 'how_id', '')::bigint,
+             lines = s -> 'patch' -> 'lines',
+             sort_order = coalesce((s -> 'patch' ->> 'sort_order')::int, 0),
+             transaction_id = case when t ->> 'op' = 'none' then transaction_id else v_tx end
+       where id = v_buy and meal_id = v_meal;
+      if not found then
+        insert into meal_buys (meal_id, how_id, lines, transaction_id, sort_order, created_by)
+        values (v_meal, nullif(s -> 'patch' ->> 'how_id', '')::bigint, s -> 'patch' -> 'lines',
+                v_tx, coalesce((s -> 'patch' ->> 'sort_order')::int, 0), v_user);
+      end if;
+    end if;
+  end loop;
+
+  return v_meal;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
@@ -325,4 +502,5 @@ union all select 'events', count(*) from events
 union all select 'fixed_costs', count(*) from fixed_costs
 union all select 'push_subscriptions', count(*) from push_subscriptions
 union all select 'anniversaries', count(*) from anniversaries
-union all select 'meals', count(*) from meals;
+union all select 'meals', count(*) from meals
+union all select 'meal_buys', count(*) from meal_buys;
