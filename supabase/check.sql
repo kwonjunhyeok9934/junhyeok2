@@ -21,4 +21,9 @@ union all select '열 pantry_items.qty',
 union all select '함수 pantry_left',
        case when exists (select 1 from pg_proc where proname = 'pantry_left') then '있음' else '없음' end
 union all select '함수 notify_webhook',
-       case when exists (select 1 from pg_proc where proname = 'notify_webhook') then '있음' else '없음' end;
+       case when exists (select 1 from pg_proc where proname = 'notify_webhook') then '있음' else '없음' end
+union all select '표 app_settings (알림 주소)',
+       case when to_regclass('public.app_settings') is null then '없음' else '있음' end;
+
+-- 알림 주소가 들어 있는지 (위가 다 '있음' 일 때만 돈다):
+--   select key, value from app_settings;

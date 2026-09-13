@@ -238,28 +238,84 @@ begin
 end $$;
 
 -- 19. 알림 웹훅 트리거 (Edge Function 으로 전송) ------------------------------------
--- <함수주소>, <WEBHOOK_SECRET> 은 본인 값으로 바꿔 실행한다.
 -- INSERT: transactions / todos / events → 기록한 사람 빼고 알림
 -- UPDATE: todos 담당자(assignee) 변경 → 새 담당자에게만 알림
+--
+-- 주소와 비밀값은 **함수 안이 아니라 app_settings 표에** 둔다. 예전에는 함수에 박아 뒀는데,
+-- 그러면 schema.sql 을 다시 실행할 때마다 '<함수주소>' 로 덮여 버리고,
+-- 그 뒤로는 저장 자체가 실패했다 — `invalid URL "<함수주소>": Bad scheme (XX000)`.
+-- (pg_net 은 주소가 이상하면 그 자리에서 오류를 내고, 트리거가 실패하면 INSERT 도 함께 굴러떨어진다.)
+-- 표에 두면 다시 실행해도 안 지워지고, 알림이 실패해도 기록은 남는다.
 
 create extension if not exists pg_net;
 
+create table if not exists app_settings (
+  key   text primary key,
+  value text not null
+);
+-- 정책을 만들지 않는다 = 앱(authenticated)에서는 못 읽는다. 비밀값이 새지 않게.
+-- 트리거 함수는 security definer 라 주인 권한으로 읽는다.
+alter table app_settings enable row level security;
+
+-- 예전처럼 함수 안에 주소를 박아 둔 DB 라면, 덮어쓰기 전에 표로 옮겨 둔다 (한 번만).
+do $do$
+declare
+  v_def    text;
+  v_url    text;
+  v_secret text;
+begin
+  select pg_get_functiondef(p.oid) into v_def
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'notify_webhook' and n.nspname = 'public';
+  if v_def is null then return; end if;
+
+  v_url    := substring(v_def from 'url := ''([^'']+)''');
+  v_secret := substring(v_def from 'x-webhook-secret":"([^"]+)"');
+
+  if v_url ~ '^https?://' then
+    insert into app_settings (key, value) values ('webhook_url', v_url) on conflict (key) do nothing;
+  end if;
+  if v_secret is not null and v_secret not like '<%' then
+    insert into app_settings (key, value) values ('webhook_secret', v_secret) on conflict (key) do nothing;
+  end if;
+end $do$;
+
 create or replace function notify_webhook() returns trigger
 language plpgsql security definer set search_path = public as $$
+declare
+  v_url    text := (select value from app_settings where key = 'webhook_url');
+  v_secret text := coalesce((select value from app_settings where key = 'webhook_secret'), '');
 begin
-  perform net.http_post(
-    url := '<함수주소>',
-    headers := '{"Content-Type":"application/json","x-webhook-secret":"<WEBHOOK_SECRET>"}'::jsonb,
-    body := jsonb_build_object(
-      'type', TG_OP,
-      'table', TG_TABLE_NAME,
-      'record', to_jsonb(NEW),
-      'old_record', case when TG_OP = 'UPDATE' then to_jsonb(OLD) end,
-      'actor', auth.uid()
-    )
-  );
+  -- 주소를 아직 안 넣었으면 알림만 건너뛴다 (기록은 그대로 남는다).
+  if v_url is null or v_url !~ '^https?://' then
+    return NEW;
+  end if;
+
+  begin
+    perform net.http_post(
+      url := v_url,
+      headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', v_secret),
+      body := jsonb_build_object(
+        'type', TG_OP,
+        'table', TG_TABLE_NAME,
+        'record', to_jsonb(NEW),
+        'old_record', case when TG_OP = 'UPDATE' then to_jsonb(OLD) end,
+        'actor', auth.uid()
+      )
+    );
+  exception when others then
+    null;   -- 알림이 안 가도 저장은 되어야 한다
+  end;
+
   return NEW;
 end $$;
+
+-- 알림을 켜려면 (주소·비밀값은 docs/알림_설정.md 참고):
+--   insert into app_settings (key, value) values
+--     ('webhook_url',    'https://<프로젝트ref>.supabase.co/functions/v1/notify'),
+--     ('webhook_secret', '<WEBHOOK_SECRET>')
+--   on conflict (key) do update set value = excluded.value;
+-- 알림을 끄려면: delete from app_settings where key = 'webhook_url';
 
 drop trigger if exists notify_transactions on transactions;
 create trigger notify_transactions after insert on transactions for each row execute function notify_webhook();
