@@ -499,6 +499,52 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .seg label { min-width: 0; }
 .seg span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---- 사 둔 것 (담아 두고 식비에서 꺼내 쓰는 품목) ---- */
+/* 탭 목록: 식비 주간 목록처럼 카테고리별 카드(day-card) 안에 품목 줄이 쌓인다 */
+#tab-pantry .fixed-total strong { font-size: 34px; }
+#tab-pantry .fixed-total .hint { margin-top: 8px; }
+#pantry-list .day-head .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pantry-row { margin-bottom: 6px; padding: 10px 12px; box-shadow: none; background: var(--bg); gap: 10px; align-items: center; }
+.pantry-row:last-child { margin-bottom: 0; }
+.pantry-row .tag.how { margin-left: 0; flex: none; font-variant-numeric: tabular-nums; }
+.pantry-row .tx-memo { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.pantry-row .tx-amount { font-size: 15px; }
+.pantry-row.done { opacity: .55; }
+.pantry-row.done .tx-cat { text-decoration: line-through; }
+
+/* 남김 ↔ 다 씀 토글. 목록에서도 세트 안에서도 같은 모양이다. */
+.chip.mini {
+  flex: none; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  border: 0; background: var(--line); color: var(--text-2); cursor: pointer;
+}
+.chip.mini.selected { background: var(--accent); color: #fff; }
+
+/* 세트 안에서 사 둔 것을 꺼내는 드롭다운 */
+.meal-set select {
+  width: 100%; border: 0; background: var(--bg); color: var(--text-2);
+  border-radius: 12px; padding: 12px 14px; font: inherit; letter-spacing: inherit;
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 18px center, right 13px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.meal-set select:focus { outline: 0; box-shadow: 0 0 0 2px var(--accent); }
+
+/* 사 둔 것에서 꺼낸 품목 줄: 칸이 아니라 읽기용이라 글자로만 놓는다 */
+/* 담기 시트의 줄: 이름은 한 줄 통째로, 가격은 그 아래 (읽은 품목 이름을 끝까지 보고 고칠 수 있게) */
+/* 이름과 그 아래 가격이 한 덩어리로 보이게: 안쪽은 붙이고 줄과 줄 사이는 띄운다 */
+.row.stacked { flex-wrap: wrap; row-gap: 4px; margin-bottom: 8px; }
+.row.stacked:last-child { margin-bottom: 0; }
+.row.stacked > [data-role="name"] { flex: 1 1 100%; }
+.row.stacked > .price { flex: 0 0 120px; }
+
+.pantry-line { background: var(--bg); border-radius: 12px; padding: 9px 12px; }
+.pantry-line .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pantry-line .pr { flex: none; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.pantry-line .icon-btn { flex: none; padding: 4px 6px; font-size: 14px; }
+
+
 /* ---- 여행 ---- */
 .travel-sum { margin-bottom: 12px; }
 .travel-head { display: flex; justify-content: space-between; align-items: baseline; }

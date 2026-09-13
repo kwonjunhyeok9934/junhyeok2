@@ -275,12 +275,21 @@ export function slotOfHour(h) {
 }
 
 // 품목 줄 정리: 이름·가격이 둘 다 빈 줄은 버리고 금액은 0 이상 정수로.
+// 사 둔 것에서 꺼낸 줄만 pantry_id·done 을 더 달고 다닌다 (직접 적은 줄은 예전 그대로 두 칸).
 export function cleanLines(lines) {
   return (lines ?? [])
-    .map((l) => ({
-      name: String(l?.name ?? '').trim(),
-      amount: Math.max(0, Math.trunc(Number(l?.amount) || 0)),
-    }))
+    .map((l) => {
+      const out = {
+        name: String(l?.name ?? '').trim(),
+        amount: Math.max(0, Math.trunc(Number(l?.amount) || 0)),
+      };
+      const id = Math.trunc(Number(l?.pantry_id) || 0);
+      if (id > 0) {
+        out.pantry_id = id;
+        out.done = l?.done === true;
+      }
+      return out;
+    })
     .filter((l) => l.name || l.amount > 0);
 }
 
@@ -337,8 +346,13 @@ export function mealBuyMemo({ slot, menu, how, shop, lines }) {
 
 // 세트의 품목을 한 줄씩. 이름과 가격을 따로 줘서 화면에서 가격 열을 맞출 수 있게 한다.
 // [{ name: '참치', price: '300원' }, { name: '고추장', price: '4,500원' }]
+// 값이 안 실린 사 둔 것 줄은 가격 자리에 '남김'/'다 씀' 이 들어간다 —
+// 열을 하나 더 두면 모든 줄에서 폭을 뺏어 품목 이름이 잘린다.
 export function buyItemTexts(lines) {
-  return cleanLines(lines).map((l) => ({ name: l.name, price: l.amount ? `${formatWon(l.amount)}원` : '' }));
+  return cleanLines(lines).map((l) => ({
+    name: l.name,
+    price: l.amount ? `${formatWon(l.amount)}원` : l.pantry_id ? (l.done ? '다 씀' : '남김') : '',
+  }));
 }
 
 // '어떻게' 뱃지 색. 목록 순서로 돌려 쓴다 —
@@ -463,6 +477,177 @@ export function planMealDelete(before) {
     mealId: before.id,
     txIds: (before?.buys ?? []).map((b) => b.transaction_id).filter((id) => id != null),
   };
+}
+
+// ---- 사 둔 것(품목을 담아 두고 식비에서 꺼내 쓴다) --------------------------------
+// 윙잇·컬리·쿠팡·마트·편의점에서 산 품목을 미리 담아 둔다. 담을 때는 가계부에 안 들어가고,
+// **처음 꺼내 먹을 때 한 번만** 그 세트에 값이 실린다. 다음에 또 먹으면 0원 줄로 붙어
+// 같은 돈을 두 번 세지 않는다. 다 먹었으면 '다 씀', 아직 남았으면 '남김'.
+
+// 지금 꺼내면 세트에 실릴 값. 다른 세트가 이미 값을 가져갔으면 0.
+// buyId 는 지금 고치고 있는 세트 — 그 세트가 가져간 값이면 그대로 다시 싣는다
+// (뺐다가 도로 넣었을 때 돈이 사라지면 안 된다).
+export function pantryPrice(item, buyId = null) {
+  const holder = item?.charged_buy_id ?? null;
+  const price = Math.max(0, Math.trunc(Number(item?.amount) || 0));
+  return holder !== null && holder !== buyId ? 0 : price;
+}
+
+// 사 둔 것 하나를 세트의 품목 줄로.
+export function pantryLine(item, buyId = null) {
+  return {
+    name: String(item?.name ?? '').trim(),
+    amount: pantryPrice(item, buyId),
+    pantry_id: item?.id,
+    done: false,
+  };
+}
+
+// 드롭다운에 올릴 것: 그 카테고리에서 아직 안 끝난 품목 중 이 끼니가 아직 안 쓴 것. 최근에 산 것부터.
+export function pantryChoices(items, { howId = null, usedIds = [], buyId = null } = {}) {
+  const used = new Set(usedIds);
+  return (items ?? [])
+    .filter((it) => !it.done && it.how_id === howId && !used.has(it.id))
+    .map((it) => ({ ...it, price: pantryPrice(it, buyId) }))
+    .sort((a, b) => (a.bought_on < b.bought_on ? 1 : a.bought_on > b.bought_on ? -1 : (b.id ?? 0) - (a.id ?? 0)));
+}
+
+// '삼겹살 600g · 12,000원' / 이미 값을 낸 것은 '삼겹살 600g · 이미 냄'
+export function pantryOptionLabel(item, buyId = null) {
+  const price = pantryPrice(item, buyId);
+  return `${String(item?.name ?? '').trim()} · ${price ? `${formatWon(price)}원` : '이미 냄'}`;
+}
+
+// 지금 고치고 있는 끼니가 이미 쓰고 있는 품목들 (한 끼니에서 같은 걸 두 번 고르지 못하게).
+export function usedPantryIds(sets) {
+  const out = [];
+  for (const s of sets ?? []) {
+    for (const l of s?.lines ?? []) if (l?.pantry_id) out.push(Math.trunc(Number(l.pantry_id)));
+  }
+  return out;
+}
+
+// 사 둔 것 목록을 카테고리(어떻게)별로. 카테고리는 칩 순서대로, 품목은 최근에 산 것부터.
+export function groupPantryByHow(items, cats) {
+  const order = new Map((cats ?? []).filter((c) => c.kind === 'meal_how').map((c, i) => [c.id, i]));
+  const nameOf = new Map((cats ?? []).map((c) => [c.id, c.name]));
+  const groups = new Map();
+  for (const it of items ?? []) {
+    const key = it.how_id ?? null;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        id: key,
+        name: key === null ? '기타' : (nameOf.get(key) ?? '기타'),
+        at: order.get(key) ?? 99,
+        items: [],
+      });
+    }
+    groups.get(key).items.push(it);
+  }
+  for (const g of groups.values()) {
+    g.items.sort((a, b) => (a.bought_on < b.bought_on ? 1 : a.bought_on > b.bought_on ? -1 : (b.id ?? 0) - (a.id ?? 0)));
+    g.total = g.items.reduce((n, it) => n + Math.max(0, Math.trunc(Number(it.amount) || 0)), 0);
+  }
+  return [...groups.values()].sort((a, b) => a.at - b.at || (a.id ?? 0) - (b.id ?? 0));
+}
+
+// { left: 남은 개수, done: 다 쓴 개수, waiting: 아직 가계부에 안 들어간 돈 }
+export function pantryStats(items) {
+  let left = 0;
+  let done = 0;
+  let waiting = 0;
+  for (const it of items ?? []) {
+    if (it.done) {
+      done += 1;
+      continue;
+    }
+    left += 1;
+    if (it.charged_buy_id == null) waiting += Math.max(0, Math.trunc(Number(it.amount) || 0));
+  }
+  return { left, done, waiting };
+}
+
+// ---- 주문 스크린샷 읽기 ---------------------------------------------------------
+// OCR 로 읽어 낸 글을 '사 둔 것' 줄로 바꾼다. 컬리·쿠팡·윙잇은 화면이 서로 다르지만
+// "품목 이름 줄 → 그 아래 가격 줄" 이라는 뼈대는 같아서 그 뼈대만 본다.
+// 글자는 어차피 조금 틀리게 읽히므로, 여기서 완벽을 노리지 않고 담기 시트에 채워
+// 사람이 고쳐 저장하게 하는 것이 이 함수의 목적이다.
+
+// 가격·수량·구분선만 남은 줄인지 보려고 지우는 것들.
+const PRICE_RE = /(\d[\d,.]*)\s*원/g;
+const QTY_RE = /(\d+)\s*개/;
+
+// 품목 이름도, 가격 줄도 될 수 없는 줄 (배송·주문·결제 안내).
+const ORDER_NOISE = [
+  /배송/, /주문/, /결제/, /결재/, /상품\s*금액/, /상품금액/, /합계/, /할인/, /적립/, /쿠폰/,
+  /반품/, /교환/, /후기/, /영수증/, /카드/, /무이자/, /포인트/, /복사/, /적용/,
+  /^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}/, // 2026.09.09 22:45
+  /^[\d\s:().월일시분]+$/,                 // 9.10(목) 05:11 같은 줄
+];
+
+const isOrderNoise = (line) => ORDER_NOISE.some((re) => re.test(line));
+
+// 그 줄에 적힌 가격들 (큰 자릿수 쉼표가 마침표로 읽히는 일이 잦아 둘 다 받는다).
+function pricesIn(line) {
+  return [...String(line).matchAll(PRICE_RE)].map((m) => parseWon(m[1])).filter((n) => n > 0);
+}
+
+// 가격 말고는 수량 부스러기만 남는 줄 = 가격 줄.
+// 수량은 자주 틀리게 읽힌다 ('1개' → '17!', '기', '개'). 글자 수만 보면 그런 줄을 놓치고
+// 그 품목이 통째로 빠지므로, **한글이 거의 없다**는 것으로 가른다 —
+// 품목 이름이나 '상품금액' 같은 줄에는 한글이 여럿 남는다.
+function isPriceLine(line, prices) {
+  if (!prices.length) return false;
+  const rest = String(line).replace(PRICE_RE, '').replace(/[\s|,.·\-/]/g, '');
+  const hangul = (rest.match(/[가-힣]/g) ?? []).length;
+  return rest.length <= 4 && hangul <= 1;
+}
+
+// OCR 글 → [{ name, amount }]. 이름이 없거나 가격이 0인 것은 버린다.
+export function parseOrderText(text) {
+  const lines = String(text ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const out = [];
+  let name = '';
+  for (const line of lines) {
+    const prices = pricesIn(line);
+    if (isPriceLine(line, prices)) {
+      if (name) {
+        // 할인 상품은 낸 값과 취소선 그은 원래 값이 같이 적힌다 — 싼 쪽이 실제로 낸 값이다.
+        const qty = Number(QTY_RE.exec(line)?.[1] ?? 1);
+        out.push({ name: qty > 1 ? `${name} x${qty}`.slice(0, 40) : name, amount: Math.min(...prices) });
+        name = '';
+      }
+      continue;
+    }
+    if (isOrderNoise(line)) continue;
+    // 가격이 섞인 설명 줄(= 가격 줄은 아닌 줄)은 이름으로 삼지 않는다.
+    if (!prices.length) name = line.slice(0, 40);
+  }
+  return out;
+}
+
+// 읽은 글에서 어느 카테고리인지 짐작한다 (못 찾으면 null — 사람이 칩을 누르면 된다).
+export function guessOrderHow(text, cats) {
+  const hay = String(text ?? '').toLowerCase();
+  const hit = (cats ?? [])
+    .filter((c) => c.kind === 'meal_how')
+    .find((c) => hay.includes(String(c.name).toLowerCase()));
+  if (hit) return hit.id;
+  if (/kurly|컬리/i.test(hay)) return (cats ?? []).find((c) => c.kind === 'meal_how' && c.name === '컬리')?.id ?? null;
+  return null;
+}
+
+// 읽은 글에서 주문 날짜 (2026.09.09 / 2026-09-09 / 2026. 9. 9). 없으면 null.
+export function guessOrderDate(text) {
+  const m = /(20\d{2})\s*[.\-/]\s*(\d{1,2})\s*[.\-/]\s*(\d{1,2})/.exec(String(text ?? ''));
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31) return null;
+  return `${y}-${pad2(Number(mo))}-${pad2(Number(d))}`;
 }
 
 // ---- 여행 ------------------------------------------------------------------

@@ -9,6 +9,8 @@ import {
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee,
   buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
+  pantryPrice, pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
+  parseOrderText, guessOrderHow, guessOrderDate,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
   nextTripName, tripDates, groupPlansByDate, splitPrep, sumPlans, sumCosts, groupPacking,
 } from '../js/calc.js';
@@ -382,6 +384,114 @@ test('resolveMealCategoryId: 연결된 거래의 분류를 유지한다', () => 
   assert.equal(resolveMealCategoryId([], null), null);                  // '식비' 가 없으면 미분류
 });
 
+// ---- 사 둔 것 -----------------------------------------------------------------
+// 담을 때는 가계부에 안 들어가고, 처음 꺼내 먹을 때 한 번만 값이 실린다.
+
+const pantry = [
+  { id: 1, how_id: 10, name: '삼겹살 600g', amount: 12000, bought_on: '2026-09-07', charged_buy_id: null, done: false },
+  { id: 2, how_id: 10, name: '두부', amount: 3000, bought_on: '2026-09-09', charged_buy_id: 91, done: false },
+  { id: 3, how_id: 10, name: '우유', amount: 2500, bought_on: '2026-09-09', charged_buy_id: 91, done: true },
+  { id: 4, how_id: 70, name: '양파 한 망', amount: 5000, bought_on: '2026-09-08', charged_buy_id: null, done: false },
+];
+
+test('pantryPrice: 처음 꺼낼 때만 값이 실린다', () => {
+  assert.equal(pantryPrice(pantry[0]), 12000);          // 아직 아무도 안 가져감
+  assert.equal(pantryPrice(pantry[1]), 0);              // 다른 세트가 이미 냈다
+  assert.equal(pantryPrice(pantry[1], 91), 3000);       // 그 값을 낸 세트를 다시 고치는 중이면 그대로
+  assert.equal(pantryPrice(pantry[1], 92), 0);          // 다른 세트에서는 여전히 0
+  assert.equal(pantryPrice({ amount: -5 }), 0);
+});
+
+test('pantryLine: 세트에 붙일 품목 줄', () => {
+  assert.deepEqual(pantryLine(pantry[0]), { name: '삼겹살 600g', amount: 12000, pantry_id: 1, done: false });
+  assert.deepEqual(pantryLine(pantry[1]), { name: '두부', amount: 0, pantry_id: 2, done: false });
+});
+
+test('pantryChoices: 다 쓴 것·다른 카테고리·이미 고른 것은 빼고 최근 것부터', () => {
+  assert.deepEqual(pantryChoices(pantry, { howId: 10 }).map((c) => c.id), [2, 1]); // 3번은 다 씀, 4번은 마트
+  assert.deepEqual(pantryChoices(pantry, { howId: 10, usedIds: [2] }).map((c) => c.id), [1]);
+  assert.deepEqual(pantryChoices(pantry, { howId: 70 }).map((c) => c.id), [4]);
+  assert.deepEqual(pantryChoices(pantry, { howId: 99 }), []);
+  assert.deepEqual(pantryChoices(null, { howId: 10 }), []);
+  assert.equal(pantryChoices(pantry, { howId: 10 })[0].price, 0); // 두부는 이미 냈다
+});
+
+test('pantryOptionLabel: 값이 남았으면 가격, 이미 냈으면 그렇게', () => {
+  assert.equal(pantryOptionLabel(pantry[0]), '삼겹살 600g · 12,000원');
+  assert.equal(pantryOptionLabel(pantry[1]), '두부 · 이미 냄');
+  assert.equal(pantryOptionLabel(pantry[1], 91), '두부 · 3,000원');
+});
+
+test('usedPantryIds: 지금 고치는 끼니가 이미 쓰고 있는 품목', () => {
+  const sets = [
+    { lines: [{ name: '삼겹살 600g', amount: 12000, pantry_id: 1 }, { name: '소금', amount: 1000 }] },
+    { lines: [{ name: '두부', amount: 0, pantry_id: 2 }] },
+  ];
+  assert.deepEqual(usedPantryIds(sets), [1, 2]);
+  assert.deepEqual(usedPantryIds([]), []);
+  assert.deepEqual(usedPantryIds(null), []);
+});
+
+test('cleanLines: 사 둔 것 꼬리표는 지키고, 직접 적은 줄은 두 칸 그대로', () => {
+  assert.deepEqual(
+    cleanLines([
+      { name: '삼겹살 600g', amount: 12000, pantry_id: '1', done: true },
+      { name: '소금', amount: 1000 },
+      { name: '두부', amount: 0, pantry_id: 2 },
+    ]),
+    [
+      { name: '삼겹살 600g', amount: 12000, pantry_id: 1, done: true },
+      { name: '소금', amount: 1000 },
+      { name: '두부', amount: 0, pantry_id: 2, done: false },
+    ],
+  );
+});
+
+test('buyItemTexts: 또 먹은 줄은 가격 자리에 남김/다 씀', () => {
+  assert.deepEqual(
+    buyItemTexts([
+      { name: '삼겹살 600g', amount: 12000, pantry_id: 1, done: false }, // 값이 실린 줄은 가격 그대로
+      { name: '두부', amount: 0, pantry_id: 2, done: true },
+      { name: '콩나물', amount: 0, pantry_id: 3, done: false },
+      { name: '얻어온 파', amount: 0 },                                   // 직접 적은 줄은 예전 그대로 빈칸
+    ]),
+    [
+      { name: '삼겹살 600g', price: '12,000원' },
+      { name: '두부', price: '다 씀' },
+      { name: '콩나물', price: '남김' },
+      { name: '얻어온 파', price: '' },
+    ],
+  );
+});
+
+test('groupPantryByHow: 칩 순서대로 묶고 최근에 산 것부터', () => {
+  const groups = groupPantryByHow(pantry, mealCats);
+  assert.deepEqual(groups.map((g) => g.name), ['컬리', '마트']);
+  assert.deepEqual(groups[0].items.map((i) => i.id), [3, 2, 1]); // 9/9 두 개 → id 큰 것 먼저, 그 다음 9/7
+  assert.equal(groups[0].total, 17500);
+  assert.deepEqual(groupPantryByHow([{ id: 9, how_id: null, name: '어디선가', amount: 0 }], mealCats)[0].name, '기타');
+});
+
+test('pantryStats: 남은 개수와 아직 가계부에 안 들어간 돈', () => {
+  assert.deepEqual(pantryStats(pantry), { left: 3, done: 1, waiting: 17000 }); // 12000 + 5000
+  assert.deepEqual(pantryStats([]), { left: 0, done: 0, waiting: 0 });
+});
+
+test('planMealSave: 처음 쓴 품목만 가계부로 가고, 또 먹은 품목은 0원이라 거래가 없다', () => {
+  const p = planMealSave(null, {
+    ...base,
+    buys: [
+      { id: null, howId: 10, lines: [pantryLine(pantry[0]), pantryLine(pantry[1])] }, // 12,000 + 0
+      { id: null, howId: 70, lines: [{ name: '두부', amount: 0, pantry_id: 2, done: true }] },
+    ],
+  }, mealCats);
+  assert.equal(p.buys[0].tx.op, 'insert');
+  assert.equal(p.buys[0].tx.payload.amount, 12000);        // 이미 낸 두부는 안 더한다
+  assert.deepEqual(p.buys[0].patch.lines[1], { name: '두부', amount: 0, pantry_id: 2, done: false });
+  assert.deepEqual(p.buys[1].tx, { op: 'none', id: null }); // 0원짜리 세트는 거래를 안 만든다
+  assert.equal(p.buys[1].patch.lines[0].done, true);        // '다 씀' 은 그대로 실려 간다
+});
+
 // ---- planMealSave -------------------------------------------------------------
 
 const base = { date: '2026-09-07', slot: 'dinner', menu: '김치찌개', eater: null, placeId: 51 };
@@ -533,6 +643,118 @@ test('planMealSave: 빈 세트는 저장 계획에서 빠진다', () => {
 test('planMealDelete: 끼니 id 와 함께 지워질 거래를 알려 준다', () => {
   assert.deepEqual(planMealDelete(meals[0]), { mealId: 1, txIds: [91, 92] });
   assert.deepEqual(planMealDelete(meals[1]), { mealId: 2, txIds: [] });
+});
+
+// ---- 주문 스크린샷 읽기 ---------------------------------------------------------
+// 아래 글은 실제 컬리 주문 내역 화면을 한글 Tesseract 로 읽은 결과 그대로다
+// (200g→2009, 오징어짬뽕→오징어짱 처럼 틀리게 읽힌 것도 손대지 않았다).
+const KURLY_OCR = `주문 내역 상세
+2026.09.09 22:45
+주문번호 2426922450272
+충북 청주시 청원구 오창읍 과학산업3로 216 (오창반도유보라퍼스티지) 104동 2301호
+주문 상품
+배송완료 9.10(목) 05:11
+별배송
+[사조대림] 육식맨의 케제크라이너
+4,480원             1개
+별배송
+[사조대림] 육식맨의 리얼 비엔나
+4,480원             1개
+별배송
+[제각각] 청상추 2009
+3,940원             1개
+별배송
+[크라운] 산도 살구팝 3239
+5,380원 1
+별배송
+[농심] 오징어짱 5입
+5,300원 1
+배송 조회
+반품 접수
+후기 작성
+전체 상품 다시 담기
+결제 정보
+상품금액 33,600원
+배송비 0원
+할인금액 -3,000원
+결제금액 30,600원`;
+
+test('parseOrderText: 컬리 주문 화면에서 품목과 낸 값을 뽑는다', () => {
+  assert.deepEqual(parseOrderText(KURLY_OCR), [
+    { name: '[사조대림] 육식맨의 케제크라이너', amount: 4480 },
+    { name: '[사조대림] 육식맨의 리얼 비엔나', amount: 4480 },
+    { name: '[제각각] 청상추 2009', amount: 3940 },
+    { name: '[크라운] 산도 살구팝 3239', amount: 5380 },
+    { name: '[농심] 오징어짱 5입', amount: 5300 },
+  ]);
+});
+
+test('parseOrderText: 배송·주문·결제 줄은 품목이 되지 않는다', () => {
+  const names = parseOrderText(KURLY_OCR).map((i) => i.name).join(' ');
+  for (const bad of ['배송', '주문', '결제', '상품금액', '할인', '청주시']) {
+    assert.ok(!names.includes(bad), `${bad} 가 품목으로 들어갔다: ${names}`);
+  }
+  // 맨 아래 결제 요약(33,600 / 30,600) 도 품목이 아니다
+  assert.ok(!parseOrderText(KURLY_OCR).some((i) => i.amount === 30600 || i.amount === 33600));
+});
+
+test('parseOrderText: 할인 상품은 취소선 그은 값 말고 낸 값을 쓴다', () => {
+  assert.deepEqual(parseOrderText('[사조대림] 케제크라이너\n4,480원 4,980원 | 1개'),
+    [{ name: '[사조대림] 케제크라이너', amount: 4480 }]);
+});
+
+test('parseOrderText: 쉼표가 마침표로 읽혀도 값은 같다 (작은 스크린샷)', () => {
+  assert.deepEqual(parseOrderText('[크라운] 산도 살구팝\n5.380원'), [{ name: '[크라운] 산도 살구팝', amount: 5380 }]);
+});
+
+test('parseOrderText: 여러 개 산 것은 이름에 수량을 남긴다 (값은 사람이 확인)', () => {
+  assert.deepEqual(parseOrderText('유기농 콩나물 300g\n4,400원 | 2개'),
+    [{ name: '유기농 콩나물 300g x2', amount: 4400 }]);
+});
+
+test('parseOrderText: 수량이 틀리게 읽혀도 그 품목을 안 놓친다', () => {
+  // 실제로 '1개' 가 '17!' · '기' · '1 개' 로 읽힌 적이 있다. 그 줄을 가격 줄로 못 알아보면
+  // 바로 위 품목이 통째로 빠진다 (컬리 화면에서 마지막 두 줄이 그렇게 사라졌다).
+  assert.deepEqual(parseOrderText('[농심] 신라면 골드 4입\n5,980원 17!'),
+    [{ name: '[농심] 신라면 골드 4입', amount: 5980 }]);
+  assert.deepEqual(parseOrderText('[크라운] 산도 살구팝\n5,380원 기'),
+    [{ name: '[크라운] 산도 살구팝', amount: 5380 }]);
+  assert.deepEqual(parseOrderText('두부 한 모\n3,000원'),
+    [{ name: '두부 한 모', amount: 3000 }]);
+});
+
+test('parseOrderText: 한글이 여럿 남는 줄은 가격 줄이 아니다', () => {
+  // '상품금액 39,650원' 을 가격 줄로 보면 바로 위 줄이 품목으로 딸려 들어간다.
+  assert.deepEqual(parseOrderText('[농심] 신라면\n5,980원 1개\n상품금액 39,650원\n결제금액 36,650원'),
+    [{ name: '[농심] 신라면', amount: 5980 }]);
+  // 값이 섞인 줄은 이름으로 안 쓴다 — 안 그러면 못 걸러 낸 요약 줄이 품목으로 들어온다.
+  // 그래서 '5,000원권 상품권' 같은 이름은 못 잡는다(드물고, 시트에서 적으면 된다).
+  assert.deepEqual(parseOrderText('5,000원권 상품권 세트\n4,500원 1개'), []);
+});
+
+test('parseOrderText: 가격 줄이 없으면 아무것도 안 담는다', () => {
+  assert.deepEqual(parseOrderText('그냥 메모\n아무것도 아님'), []);
+  assert.deepEqual(parseOrderText(''), []);
+  assert.deepEqual(parseOrderText(null), []);
+});
+
+test('guessOrderHow: 이름이 보일 때만 짐작하고, 아니면 사람이 고르게 둔다', () => {
+  // 컬리 주문 화면에는 정작 '컬리' 라는 글자가 없을 때가 많다 (상품 이름에 우연히 들어갈 뿐).
+  // 그래서 못 찾는 것이 정상이고, 그때는 시트에서 고른 칩을 그대로 쓴다.
+  assert.equal(guessOrderHow(KURLY_OCR, mealCats), null);
+  assert.equal(guessOrderHow(`${KURLY_OCR}\n[컬리멤버스] 데일리 물티슈`, mealCats), 10);
+  assert.equal(guessOrderHow('Kurly 주문 내역', mealCats), 10);
+  assert.equal(guessOrderHow('쿠팡 주문 내역', [...mealCats, { id: 20, name: '쿠팡', kind: 'meal_how' }]), 20);
+  assert.equal(guessOrderHow('아무 글', mealCats), null);
+  assert.equal(guessOrderHow(KURLY_OCR, null), null);
+});
+
+test('guessOrderDate: 주문 날짜를 읽는다', () => {
+  assert.equal(guessOrderDate(KURLY_OCR), '2026-09-09');
+  assert.equal(guessOrderDate('2026-09-09 22:45'), '2026-09-09');
+  assert.equal(guessOrderDate('2026. 9. 9'), '2026-09-09');
+  assert.equal(guessOrderDate('2026.19.09'), null); // 달이 19월일 수는 없다
+  assert.equal(guessOrderDate('날짜 없음'), null);
 });
 
 // ---- 여행 ------------------------------------------------------------------

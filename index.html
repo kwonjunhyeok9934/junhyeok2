@@ -96,6 +96,20 @@
       <div id="fixed-list"><div class="skel"></div><div class="skel"></div></div>
     </section>
 
+    <section id="tab-pantry" class="tab" hidden>
+      <div class="card fixed-total">
+        <span class="sum-label">사 둔 것 · 남은 것</span>
+        <strong id="pantry-left">0</strong>
+        <p id="pantry-waiting" class="hint" hidden></p>
+      </div>
+
+      <h2 class="list-head" id="pantry-list-head">담아 둔 것
+        <button type="button" id="pantry-done-toggle" class="btn small" hidden></button>
+      </h2>
+      <div id="pantry-list"><div class="skel"></div><div class="skel"></div></div>
+      <div id="pantry-notice" hidden></div>
+    </section>
+
     <section id="tab-todo" class="tab" hidden>
       <form id="todo-quick" class="row quick">
         <input id="todo-quick-title" type="text" placeholder="할일을 적고 Enter" maxlength="80" autocomplete="off">
@@ -390,6 +404,40 @@
       <div class="row actions">
         <button type="button" id="meal-delete" class="btn danger" hidden>삭제</button>
         <button type="submit" id="meal-save" class="btn primary grow" disabled>저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 사 둔 것 시트 (윙잇·컬리에서 산 품목을 미리 담아 둔다) -->
+<div id="sheet-pantry" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel">
+    <form id="pantry-form">
+      <div id="pantry-shot-row">
+        <button type="button" id="pantry-shot" class="btn wide">📷 주문 스크린샷에서 읽기</button>
+        <input id="pantry-shot-file" type="file" accept="image/*" hidden>
+        <p id="pantry-shot-note" class="hint" hidden></p>
+      </div>
+
+      <div>
+        <div class="field-label">어디서 샀어요?</div>
+        <div id="pantry-hows" class="chips"></div>
+      </div>
+
+      <input id="pantry-date" type="date" required>
+
+      <div>
+        <div class="field-label row"><span>산 품목</span><span id="pantry-total" class="tx-amount"></span></div>
+        <div id="pantry-items" class="set-items"></div>
+      </div>
+
+      <p class="hint">여기 적은 가격은 아직 가계부에 안 들어가요. 식비에서 이 품목으로 처음 밥을 먹을 때 한 번만 들어가요.</p>
+      <p id="pantry-charged" class="hint" hidden>이미 가계부에 들어간 품목이라 가격은 못 바꿔요. 고치려면 그 끼니에서 고쳐 주세요.</p>
+
+      <div class="row actions">
+        <button type="button" id="pantry-delete" class="btn danger" hidden>삭제</button>
+        <button type="submit" id="pantry-save" class="btn primary grow" disabled>저장</button>
       </div>
     </form>
   </div>

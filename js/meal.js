@@ -2,16 +2,22 @@
 // 한 끼 = 날짜·끼니·메뉴·누가·어디서 하나씩 + '어떻게' 세트 0..N.
 // 세트 하나가 가계부 거래 한 건과 연결된다. 품목 가격이 원본이고 거래에는 그 합계가 들어간다.
 // 저장은 save_meal RPC 한 번으로 원자적으로 처리한다 (중간에 실패하면 아무것도 안 쓰인다).
+//
+// '사 둔 것'(js/pantry.js 탭): 미리 담아 둔 품목을 세트에서 드롭다운으로 꺼낸다.
+// 담을 때는 가계부에 안 들어가고, 처음 꺼내 먹는 줄에만 값이 실린다. 또 먹으면 0원 줄로 붙는다.
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
 import {
-  todayLocal, shiftDay, formatWon, parseWon, dayName,
+  todayLocal, shiftDay, formatWon, dayName,
   MEAL_SLOTS, SLOT_LABEL, weekStart, weekDays, weekLabel, slotOfHour,
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL,
   buyTotal, buyAmount, mealAmount, sortMealBuys, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
+  pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds,
 } from './calc.js';
 import { fetchCategories, addCategory } from './categories.js';
+import * as pantry from './pantry.js';
+import { itemRowHtml, growItemRows, readFreeRow, onItemRowsKeydown } from './itemrow.js';
 
 const state = {
   start: '',          // 보고 있는 주의 월요일
@@ -69,7 +75,8 @@ export function init({ userId, onTxChange: cb }) {
   el.setAdd.addEventListener('click', addSet);
   el.sets.addEventListener('click', onSetsClick);
   el.sets.addEventListener('input', onSetsInput);
-  el.sets.addEventListener('keydown', onSetsKeydown);
+  el.sets.addEventListener('change', onSetsChange);
+  el.sets.addEventListener('keydown', onItemRowsKeydown);
 
   el.menu.addEventListener('input', updateSaveState);
   el.form.addEventListener('submit', (e) => { e.preventDefault(); save(); });
@@ -108,6 +115,7 @@ export async function refresh() {
         .order('date', { ascending: true })
         .order('created_at', { ascending: true })
         .then(unwrap),
+      pantry.load(), // 세트 드롭다운이 최신 목록을 보도록 같이 받는다
     ]);
     state.cats = cats;
     state.profiles = profiles;
@@ -116,7 +124,7 @@ export async function refresh() {
   } catch (err) {
     console.error(err);
     el.week.innerHTML = needsSql(err)
-      ? `<p class="empty">식비 표가 아직 준비되지 않았어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 의 23번 섹션을 실행해 주세요.</p>`
+      ? `<p class="empty">식비 표가 아직 준비되지 않았어요.<br>Supabase SQL Editor 에서<br><code>schema.sql</code> 전체를 한 번 실행해 주세요.</p>`
       : `<div class="retry">불러오지 못했어요<br>
           <button type="button" class="btn small" data-retry>다시 시도</button>
         </div>`;
@@ -373,6 +381,9 @@ function renderSets() {
   updateSaveState();
 }
 
+// 이름도 값도 없는 줄 (맨 끝에 늘 놓이는 입력용 빈 줄).
+const isBlankLine = (l) => !String(l?.name ?? '').trim() && !(Number(l?.amount) > 0) && !l?.pantry_id;
+
 function openSetHtml(s) {
   if (s.picking || !s.howId) {
     return `
@@ -384,7 +395,9 @@ function openSetHtml(s) {
   }
   const how = nameOf(s.howId);
   const fee = howHasFee(how) ? (s.lines.find((l) => l.name === FEE_LABEL) ?? { name: FEE_LABEL, amount: 0 }) : null;
-  const items = s.lines.filter((l) => l.name !== FEE_LABEL);
+  // commitOpenSet 이 DOM 에서 읽어 온 줄에는 맨 끝 빈 줄도 섞여 있다. 여기서 걸러 내지 않으면
+  // 다시 그릴 때마다 빈 줄이 하나씩 쌓인다 (남김↔다 씀 을 누를 때마다 늘어났다).
+  const items = s.lines.filter((l) => l.name !== FEE_LABEL && !isBlankLine(l));
   const rows = [...items, { name: '', amount: 0 }]; // 맨 끝에는 항상 빈 줄
   return `
     <div class="meal-set" data-key="${s.key}">
@@ -397,21 +410,42 @@ function openSetHtml(s) {
         ? `<input type="text" data-role="shop" placeholder="가게 이름 (예: ○○반점)" maxlength="40" autocomplete="off" value="${escapeHtml(s.shop ?? '')}">`
         : ''}
       <div class="set-items">
-        ${rows.map((l, k) => itemRowHtml(l, k === rows.length - 1)).join('')}
-        ${fee ? itemRowHtml(fee, true, true) : ''}
+        ${rows.map((l, k) => setRowHtml(l, { last: k === rows.length - 1 })).join('')}
+        ${fee ? setRowHtml(fee, { last: true, fixed: true }) : ''}
       </div>
+      ${pantrySelectHtml(s)}
     </div>`;
 }
 
-// fixed = 배달료처럼 이름이 고정된 줄. 이름 칸은 읽기 전용이고 지울 수 없다.
-function itemRowHtml(line, last, fixed = false) {
+// 그 카테고리에 담아 둔 게 있을 때만 드롭다운이 나온다.
+function pantrySelectHtml(s) {
+  const choices = pantryChoices(pantry.items(), {
+    howId: s.howId,
+    usedIds: usedPantryIds(state.sets),
+    buyId: s.id,
+  });
+  if (!choices.length) return '';
   return `
-    <div class="row">
-      <input type="text" data-role="name" placeholder="품목 (선택)" maxlength="40" autocomplete="off"
-             enterkeyhint="next" value="${escapeHtml(line.name ?? '')}"${fixed ? ' readonly' : ''}>
-      <input type="text" data-role="price" class="price" inputmode="numeric" placeholder="0" autocomplete="off"
-             enterkeyhint="next" value="${line.amount ? formatWon(line.amount) : ''}">
-      <button type="button" class="icon-btn" data-act="del-item" aria-label="이 품목 지우기"${last || fixed ? ' style="visibility:hidden"' : ''}>✕</button>
+    <select data-role="pantry" aria-label="사 둔 것에서 가져오기">
+      <option value="">＋ 사 둔 것에서 가져오기</option>
+      ${choices.map((c) => `<option value="${c.id}">${escapeHtml(pantryOptionLabel(c, s.id))}</option>`).join('')}
+    </select>`;
+}
+
+// 세트의 품목 줄. 사 둔 것에서 꺼낸 줄만 모양이 다르고 나머지는 공용 편집기가 그린다.
+const setRowHtml = (line, opts) => (line.pantry_id ? pantryItemRowHtml(line) : itemRowHtml(line, opts));
+
+// 사 둔 것에서 꺼낸 줄. 이름·가격은 그 품목의 것이라 여기서 못 고치고, 다 썼는지만 누른다.
+// 값은 칸이 아니라 꼬리표(data-*)에 둔다 — 읽기 전용 칸을 흉내 내는 것보다 읽기가 쉽다.
+function pantryItemRowHtml(line) {
+  const done = line.done === true;
+  return `
+    <div class="row pantry-line" data-pantry="${line.pantry_id}" data-done="${done ? 1 : 0}"
+         data-name="${escapeHtml(line.name ?? '')}" data-amount="${Number(line.amount) || 0}">
+      <span class="nm">${escapeHtml(line.name ?? '')}</span>
+      <span class="pr">${line.amount ? `${formatWon(line.amount)}원` : '이미 냄'}</span>
+      <button type="button" class="chip mini${done ? ' selected' : ''}" data-act="toggle-done">${done ? '다 씀' : '남김'}</button>
+      <button type="button" class="icon-btn" data-act="del-item" aria-label="이 품목 빼기">✕</button>
     </div>`;
 }
 
@@ -436,10 +470,18 @@ function commitOpenSet() {
   const s = state.sets.find((x) => x.key === state.openKey);
   if (!s) return;
   s.shop = box.querySelector('[data-role="shop"]')?.value ?? s.shop ?? '';
-  s.lines = [...box.querySelectorAll('.set-items .row')].map((row) => ({
-    name: row.querySelector('[data-role="name"]').value,
-    amount: parseWon(row.querySelector('[data-role="price"]').value),
-  }));
+  s.lines = [...box.querySelectorAll('.set-items .row')].map(readItemRow);
+}
+
+function readItemRow(row) {
+  if (!row.dataset.pantry) return readFreeRow(row);
+  // 사 둔 것 줄은 칸이 없다 — 값을 꼬리표에서 읽는다.
+  return {
+    name: row.dataset.name,
+    amount: Number(row.dataset.amount) || 0,
+    pantry_id: Number(row.dataset.pantry),
+    done: row.dataset.done === '1',
+  };
 }
 
 function onSetsClick(e) {
@@ -470,6 +512,15 @@ function onSetsClick(e) {
     (box?.querySelector('[data-role="shop"]') ?? box?.querySelector('[data-role="name"]'))?.focus();
     return;
   }
+  if (act === 'toggle-done') {
+    commitOpenSet();
+    const rows = [...e.target.closest('.set-items').children];
+    const i = rows.indexOf(e.target.closest('.row'));
+    s.lines[i] = { ...s.lines[i], done: !s.lines[i].done };
+    haptic();
+    renderSets();
+    return;
+  }
   if (act === 'repick') { s.picking = true; renderSets(); return; }
   if (act === 'open-set') {
     commitOpenSet();
@@ -478,32 +529,27 @@ function onSetsClick(e) {
   }
 }
 
-// 타이핑 중에는 다시 그리지 않는다 — 포커스와 캐럿을 지키려고 DOM 을 직접 손본다.
 function onSetsInput(e) {
-  const input = e.target;
-  if (input.dataset.role === 'price') {
-    const n = parseWon(input.value);
-    input.value = n ? formatWon(n) : '';
-  }
-  const items = input.closest('.set-items');
-  const lastFree = [...(items?.children ?? [])].filter((r) => !r.querySelector('[readonly]')).at(-1);
-  if (items && input.closest('.row') === lastFree && (input.value.trim() || parseWon(input.value))) {
-    lastFree.insertAdjacentHTML('afterend', itemRowHtml({ name: '', amount: 0 }, true));
-    lastFree.querySelector('[data-act="del-item"]').style.visibility = '';
-  }
+  if (e.target.dataset.role === 'pantry') return; // 드롭다운은 change 에서 다룬다
+  growItemRows(e.target);
   commitOpenSet();
   recalcSums();
   updateSaveState();
 }
 
-// 폼 안의 Enter 는 암시적 제출이라 그냥 두면 저장이 눌린다. 다음 칸으로 넘긴다.
-function onSetsKeydown(e) {
-  if (e.key !== 'Enter') return;
-  e.preventDefault();
-  const row = e.target.closest('.row');
-  if (e.target.dataset.role === 'name') { row.querySelector('[data-role="price"]').focus(); return; }
-  const next = row.nextElementSibling;
-  if (next) next.querySelector('[data-role="name"]').focus();
+// 드롭다운에서 사 둔 것을 고르면 그 줄을 세트 맨 밑에 붙인다.
+function onSetsChange(e) {
+  const sel = e.target;
+  if (sel.dataset.role !== 'pantry') return;
+  const id = Number(sel.value);
+  sel.value = '';
+  const s = state.sets.find((x) => x.key === Number(sel.closest('[data-key]')?.dataset.key));
+  const item = pantry.items().find((p) => p.id === id);
+  if (!s || !item) return;
+  commitOpenSet();
+  s.lines = [...cleanLines(s.lines), pantryLine(item, s.id)];
+  haptic();
+  renderSets();
 }
 
 function recalcSums() {
@@ -553,7 +599,7 @@ async function save() {
     onTxChange();
   } catch (err) {
     console.error(err);
-    toast(needsSql(err) ? 'SQL 의 23번 섹션을 먼저 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
+    toast(needsSql(err) ? 'schema.sql 전체를 한 번 실행해 주세요' : '저장에 실패했어요. 다시 시도해 주세요');
   } finally {
     el.save.disabled = false;
   }

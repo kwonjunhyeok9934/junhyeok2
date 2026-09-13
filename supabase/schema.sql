@@ -176,6 +176,8 @@ end $$;
 
 -- 13. 카테고리에 고정비 종류 허용 + 기본 고정비 카테고리 -----------------------
 
+-- 23번이 늘릴 종류까지 미리 허용한다. 이미 식비 카테고리가 있는 표에 전체를 다시 실행해도
+-- 여기서 막히지 않게 하려는 것뿐이고, 최종 상태는 23번이 정한다.
 alter table categories drop constraint if exists categories_kind_check;
 -- 종류는 뒤 섹션들에서 늘어난다. 여러 번 실행해도 되도록 어디서나 같은(가장 넓은) 목록을 쓴다.
 alter table categories add constraint categories_kind_check
@@ -293,7 +295,7 @@ create index if not exists meals_date_idx on meals (date);
 do $$
 begin
   if exists (select 1 from information_schema.columns
-             where table_name = 'meals' and column_name = 'transaction_id') then
+             where table_schema = 'public' and table_name = 'meals' and column_name = 'transaction_id') then
     create unique index if not exists meals_transaction_id_key on meals (transaction_id);
   end if;
 end $$;
@@ -310,10 +312,13 @@ begin
 end $$;
 
 -- 식비 카테고리 (설정 → 카테고리에서 이름·순서·추가·삭제 가능)
+-- 13번과 같은 이유로 23번의 종류까지 미리 허용한다.
 alter table categories drop constraint if exists categories_kind_check;
 alter table categories add constraint categories_kind_check
   check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip'));
 
+-- 23번이 이 행들의 kind 를 'meal_how' 로 바꾸므로 둘 다 보고 판단한다.
+-- 'meal' 만 보면 전체를 다시 실행할 때마다 컬리·마트·배달이 한 벌씩 더 생긴다.
 insert into categories (name, kind, sort_order)
 select * from (values
   ('집밥', 'meal', 10),
@@ -323,7 +328,7 @@ select * from (values
   ('마트', 'meal', 50),
   ('컬리', 'meal', 60)
 ) as v(name, kind, sort_order)
-where not exists (select 1 from categories where kind = 'meal');
+where not exists (select 1 from categories where kind in ('meal', 'meal_how'));
 
 -- 23. 식비 1:N — 누가·어디서 + '어떻게' 세트(품목별 가격) ---------------------------
 -- 21번은 "한 끼 = 지출 한 건" 이었다. 실제로는 한 끼에 마트에서 산 재료 + 컬리에서 시킨
@@ -1089,6 +1094,179 @@ begin
   return v_id;
 end $$;
 
+-- 38. 식비: 사 둔 것 (품목을 미리 담아 두고 식비에서 꺼내 쓴다) ---------------------
+-- 윙잇·컬리·쿠팡·마트·편의점에서 산 품목을 미리 적어 둔다. 여기 적은 가격은 아직
+-- 가계부에 안 들어간다 — **그 품목으로 처음 밥을 먹을 때 한 번만** 넘어간다(전가).
+-- 한 번에 다 안 먹고 다음에 또 먹으면 그 줄은 0원으로 붙어서 두 번 세지 않는다.
+-- 다 먹었으면 '다 씀', 아직 남았으면 '남김' — 남은 것만 드롭다운에 계속 나온다.
+--
+-- 돈의 원본은 그대로 meal_buys.lines 다. 사 둔 것에서 꺼낸 줄은 pantry_id 를 달고 있을 뿐이고,
+-- 세트 합계·거래 금액을 구하는 규칙은 하나도 바뀌지 않는다.
+
+create table if not exists pantry_items (
+  id             bigint generated always as identity primary key,
+  how_id         bigint  references categories(id) on delete set null,  -- kind='meal_how' (윙잇·컬리…)
+  name           text    not null,
+  amount         integer not null default 0 check (amount >= 0),        -- 산 가격 (아직 가계부 밖)
+  bought_on      date    not null default current_date,
+  -- 가격을 가져간 세트. 그 세트가 사라지면 null 이 되어 다음에 다시 전가된다.
+  charged_buy_id bigint  references meal_buys(id) on delete set null,
+  done           boolean not null default false,                        -- 다 씀 / 남김
+  done_buy_id    bigint  references meal_buys(id) on delete set null,   -- '다 씀' 을 누른 세트
+  created_by     uuid    not null references auth.users(id),
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists pantry_items_open_idx on pantry_items (done, how_id);
+
+alter table pantry_items enable row level security;
+drop policy if exists "auth all" on pantry_items;
+create policy "auth all" on pantry_items for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'pantry_items') then
+    alter publication supabase_realtime add table pantry_items;
+  end if;
+end $$;
+
+-- 세트가 사라지면 그 세트가 쥐고 있던 전가와 '다 씀' 을 놓아 준다 (품목은 냉장고로 돌아간다).
+-- BEFORE 여야 한다: AFTER 로 두면 FK 의 on delete set null 이 먼저 돌아 old.id 로 찾을 게 없다.
+create or replace function meal_buy_free_pantry() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  update pantry_items set charged_buy_id = null where charged_buy_id = old.id;
+  update pantry_items set done = false, done_buy_id = null where done_buy_id = old.id;
+  return old;
+end $$;
+
+drop trigger if exists meal_buys_before_delete on meal_buys;
+create trigger meal_buys_before_delete before delete on meal_buys
+  for each row execute function meal_buy_free_pantry();
+
+-- save_meal 에 '사 둔 것' 뒷정리를 더한다. 여기서도 정책은 한 줄도 없다 —
+-- 가격을 실은 줄이 곧 전가를 가져가고, 줄에 적힌 done 을 그대로 옮길 뿐이다.
+-- (누구에게 값을 실을지는 js/calc.js 의 planMealSave 가 정한다.)
+create or replace function save_meal(p jsonb) returns bigint
+language plpgsql as $$
+declare
+  v_meal  bigint := nullif(p -> 'meal' ->> 'id', '')::bigint;
+  v_user  uuid   := auth.uid();
+  m       jsonb  := p -> 'meal' -> 'patch';
+  s       jsonb;
+  t       jsonb;
+  v_lines jsonb;
+  v_tx    bigint;
+  v_buy   bigint;
+begin
+  if v_meal is null then
+    insert into meals (date, slot, menu, eater, place_id, created_by)
+    values ((m ->> 'date')::date, m ->> 'slot', coalesce(m ->> 'menu', ''),
+            nullif(m ->> 'eater', '')::uuid, nullif(m ->> 'place_id', '')::bigint, v_user)
+    returning id into v_meal;
+  else
+    update meals set date = (m ->> 'date')::date, slot = m ->> 'slot', menu = coalesce(m ->> 'menu', ''),
+                     eater = nullif(m ->> 'eater', '')::uuid, place_id = nullif(m ->> 'place_id', '')::bigint
+    where id = v_meal;
+    if not found then   -- 다른 기기에서 이미 지웠다 → 새로 만든다
+      insert into meals (date, slot, menu, eater, place_id, created_by)
+      values ((m ->> 'date')::date, m ->> 'slot', coalesce(m ->> 'menu', ''),
+              nullif(m ->> 'eater', '')::uuid, nullif(m ->> 'place_id', '')::bigint, v_user)
+      returning id into v_meal;
+    end if;
+  end if;
+
+  -- 화면에서 뺀 세트만 지운다 (트리거가 그 거래까지 지운다).
+  -- "payload 에 없는 건 다 지운다" 로 하면 다른 폰에서 방금 추가한 세트를 조용히 날린다.
+  delete from meal_buys
+  where meal_id = v_meal
+    and id in (select value::bigint from jsonb_array_elements_text(coalesce(p -> 'removed', '[]'::jsonb)));
+
+  for s in select * from jsonb_array_elements(coalesce(p -> 'buys', '[]'::jsonb)) loop
+    t       := s -> 'tx';
+    v_lines := coalesce(s -> 'patch' -> 'lines', '[]'::jsonb);
+    v_tx    := nullif(t ->> 'id', '')::bigint;
+
+    if t ->> 'op' = 'insert' then
+      insert into transactions (kind, amount, category_id, date, memo, created_by)
+      values ('expense', (t -> 'payload' ->> 'amount')::int,
+              nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+              (t -> 'payload' ->> 'date')::date, t -> 'payload' ->> 'memo', v_user)
+      returning id into v_tx;
+    elsif t ->> 'op' = 'update' then
+      update transactions set kind = 'expense', amount = (t -> 'payload' ->> 'amount')::int,
+             category_id = nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+             date = (t -> 'payload' ->> 'date')::date, memo = t -> 'payload' ->> 'memo'
+      where id = v_tx;
+      if not found then   -- 가계부에서 지워진 거래 → 새로 만들어 다시 연결한다
+        insert into transactions (kind, amount, category_id, date, memo, created_by)
+        values ('expense', (t -> 'payload' ->> 'amount')::int,
+                nullif(t -> 'payload' ->> 'category_id', '')::bigint,
+                (t -> 'payload' ->> 'date')::date, t -> 'payload' ->> 'memo', v_user)
+        returning id into v_tx;
+      end if;
+    elsif t ->> 'op' = 'delete' then
+      delete from transactions where id = v_tx;   -- FK 가 세트의 연결을 끊는다
+      v_tx := null;
+    end if;
+
+    v_buy := nullif(s ->> 'id', '')::bigint;
+    if v_buy is null then
+      insert into meal_buys (meal_id, how_id, shop, lines, transaction_id, sort_order, created_by)
+      values (v_meal, nullif(s -> 'patch' ->> 'how_id', '')::bigint, coalesce(s -> 'patch' ->> 'shop', ''),
+              v_lines, v_tx, coalesce((s -> 'patch' ->> 'sort_order')::int, 0), v_user)
+      returning id into v_buy;
+    else
+      update meal_buys
+         set how_id = nullif(s -> 'patch' ->> 'how_id', '')::bigint,
+             shop = coalesce(s -> 'patch' ->> 'shop', ''),
+             lines = v_lines,
+             sort_order = coalesce((s -> 'patch' ->> 'sort_order')::int, 0),
+             transaction_id = case when t ->> 'op' = 'none' then transaction_id else v_tx end
+       where id = v_buy and meal_id = v_meal;
+      if not found then
+        insert into meal_buys (meal_id, how_id, shop, lines, transaction_id, sort_order, created_by)
+        values (v_meal, nullif(s -> 'patch' ->> 'how_id', '')::bigint, coalesce(s -> 'patch' ->> 'shop', ''),
+                v_lines, v_tx, coalesce((s -> 'patch' ->> 'sort_order')::int, 0), v_user)
+        returning id into v_buy;
+      end if;
+    end if;
+
+    -- 사 둔 것: 값이 실린 줄이 그 품목의 전가를 가져간다 (0원으로 붙은 줄은 안 가져간다).
+    update pantry_items p set charged_buy_id = v_buy
+      from jsonb_array_elements(v_lines) as e(line)
+     where p.id = nullif(line ->> 'pantry_id', '')::bigint
+       and coalesce((line ->> 'amount')::int, 0) > 0;
+
+    -- 이 세트에서 빠진 품목은 놓아 준다 — 다음에 꺼내 쓸 때 값이 다시 붙는다.
+    update pantry_items p set charged_buy_id = null
+     where p.charged_buy_id = v_buy
+       and not exists (
+         select 1 from jsonb_array_elements(v_lines) as e(line)
+          where nullif(line ->> 'pantry_id', '')::bigint = p.id
+            and coalesce((line ->> 'amount')::int, 0) > 0);
+
+    -- 다 씀 / 남김. 다른 세트가 이미 '다 씀' 으로 닫은 품목은 건드리지 않는다
+    -- (예전 끼니를 고쳤다고 해서 나중 끼니가 끝낸 품목이 되살아나면 안 된다).
+    update pantry_items p
+       set done = coalesce((line ->> 'done')::boolean, false),
+           done_buy_id = case when coalesce((line ->> 'done')::boolean, false) then v_buy end
+      from jsonb_array_elements(v_lines) as e(line)
+     where p.id = nullif(line ->> 'pantry_id', '')::bigint
+       and (p.done_buy_id is null or p.done_buy_id = v_buy);
+
+    -- 이 세트가 닫았던 품목이 세트에서 빠졌으면 다시 남은 것으로 돌린다.
+    update pantry_items p set done = false, done_buy_id = null
+     where p.done_buy_id = v_buy
+       and not exists (
+         select 1 from jsonb_array_elements(v_lines) as e(line)
+          where nullif(line ->> 'pantry_id', '')::bigint = p.id
+            and coalesce((line ->> 'done')::boolean, false));
+  end loop;
+
+  return v_meal;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
@@ -1101,6 +1279,7 @@ union all select 'push_subscriptions', count(*) from push_subscriptions
 union all select 'anniversaries', count(*) from anniversaries
 union all select 'meals', count(*) from meals
 union all select 'meal_buys', count(*) from meal_buys
+union all select 'pantry_items', count(*) from pantry_items
 union all select 'visited_regions', count(*) from visited_regions
 union all select 'trips', count(*) from trips
 union all select 'trip_regions', count(*) from trip_regions
