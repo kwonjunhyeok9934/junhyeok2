@@ -96,11 +96,45 @@ async function boot() {
     }
   });
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('sw', e));
-  }
-
+  watchForUpdate();
   keepStorage();
+}
+
+// ---- 새 버전 자동 반영 -------------------------------------------------------
+// 홈 화면 아이콘으로 여는 앱은 '주소로 이동'을 하지 않아서, 그냥 두면 브라우저가
+// 새 sw.js 를 확인할 기회가 없다. 그래서 며칠이 지나도 옛 화면이 그대로였다.
+// 앱을 켤 때와 다시 앞으로 불러올 때마다 새 버전이 있는지 직접 물어본다.
+function watchForUpdate() {
+  if (!('serviceWorker' in navigator)) return;
+
+  // 처음 설치되는 경우엔 이미 최신이라 새로고침할 것이 없다.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let pending = false;
+
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    const check = () => {
+      if (document.visibilityState !== 'visible') return;
+      reg.update().catch(() => { /* 오프라인이면 다음 기회에 */ });
+    };
+    check();
+    setInterval(check, 30 * 60 * 1000);   // 오래 켜 두는 경우
+    document.addEventListener('visibilitychange', () => { check(); applyUpdate(); });
+  }).catch((e) => console.warn('sw', e));
+
+  // 새 sw.js 가 자리를 넘겨받은 순간. 화면은 아직 옛 파일로 그려져 있다.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return;
+    pending = true;
+    applyUpdate();
+  });
+
+  // 적고 있는 중에 새로고침하면 쓰던 게 날아간다. 시트가 닫힐 때까지 미룬다.
+  function applyUpdate() {
+    if (!pending) return;
+    if (document.querySelector('.sheet.open')) return;
+    pending = false;
+    location.reload();
+  }
 }
 
 // 브라우저가 저장공간을 알아서 청소하면서 로그인이 풀리는 걸 막는다.
