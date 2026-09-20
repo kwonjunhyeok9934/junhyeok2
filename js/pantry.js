@@ -10,7 +10,7 @@ import {
   todayLocal, shiftDay, formatWon, howNeedsShop, groupPantryByHow, pantryStats, pantryLeftOf, tagColor,
   parseOrderText, guessOrderHow, guessOrderDate,
 } from './calc.js';
-import { fetchCategories } from './categories.js';
+import { fetchCategories, addCategory } from './categories.js';
 import { itemRowHtml, growItemRows, readFreeRow, onItemRowsKeydown } from './itemrow.js';
 import * as ocr from './ocr.js';
 
@@ -44,6 +44,8 @@ export function init({ userId }) {
     shotFile: $('#pantry-shot-file'), shotNote: $('#pantry-shot-note'),
     cam: $('#pantry-cam'), camFile: $('#pantry-cam-file'),
     shotRaw: $('#pantry-shot-raw'), shotText: $('#pantry-shot-text'),
+    newHowRow: $('#pantry-new-how-row'), newHow: $('#pantry-new-how'),
+    newHowOk: $('#pantry-new-how-ok'),
   };
 
   bindSheetBackdrop(el.sheet);
@@ -53,6 +55,10 @@ export function init({ userId }) {
     render();
   });
   el.hows.addEventListener('click', onHowClick);
+  el.newHowOk.addEventListener('click', createHow);
+  el.newHow.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); createHow(); }
+  });
   el.rows.addEventListener('input', onRowsInput);
   el.rows.addEventListener('click', onRowsClick);
   el.rows.addEventListener('keydown', onItemRowsKeydown);
@@ -240,6 +246,8 @@ function openSheetFor(item) {
   el.cam.disabled = false;
   el.shotNote.hidden = true;
   el.shotRaw.hidden = true;
+  el.newHowRow.hidden = true;
+  el.newHow.value = '';
   el.shotRaw.open = false;
   renderHows();
   el.rows.innerHTML = item
@@ -271,15 +279,41 @@ function renderHows() {
     .map(
       (c) => `<button type="button" class="chip ${c.id === state.howId ? 'selected' : ''}" data-id="${c.id}">${escapeHtml(c.name)}</button>`,
     )
-    .join('');
+    .join('') + '<button type="button" class="chip add" data-add>＋</button>';
 }
 
 function onHowClick(e) {
   const chip = e.target.closest('.chip');
   if (!chip) return;
+  if (chip.dataset.add !== undefined) {
+    el.newHowRow.hidden = false;
+    el.newHow.focus();
+    return;
+  }
   state.howId = Number(chip.dataset.id);
   renderHows();
   updateSaveState();
+}
+
+async function createHow() {
+  const name = el.newHow.value;
+  if (!name.trim()) return;
+  try {
+    const created = await addCategory(name, 'meal_how', state.cats);
+    state.cats = await fetchCategories();
+    if (!pantryHows().some((c) => c.id === created.id)) {
+      toast(`'${created.name}' 은 갈 때마다 가게가 달라서 사 둔 것에 담지 않아요`);
+      return;
+    }
+    state.howId = created.id;
+    el.newHow.value = '';
+    el.newHowRow.hidden = true;
+    renderHows();
+    updateSaveState();
+  } catch (err) {
+    console.error(err);
+    toast('산 곳을 추가하지 못했어요');
+  }
 }
 
 const readRows = () => [...el.rows.querySelectorAll('.row')].map(readFreeRow).map((l) => ({ ...l, name: l.name.trim() }));
