@@ -13,6 +13,7 @@ import * as pantry from './pantry.js';
 import * as travel from './travel.js';
 import * as trip from './trip.js';
 import * as packing from './packing.js';
+import * as rules from './rules.js';
 
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
@@ -36,18 +37,20 @@ const TABS = {
   travel: { title: '지도', el: $('#tab-travel'), group: 'travel' },
   trips: { title: '내 여행', el: $('#tab-trips'), group: 'travel' },
   packing: { title: '준비물', el: $('#tab-packing'), group: 'travel' },
+  rule: { title: '규칙', el: $('#tab-rule'), group: 'rule' },
 };
 
-// 아래 탭바 네 칸. 한 칸 안의 화면은 위쪽 작은 탭으로 옮겨 다닌다.
+// 아래 탭바 다섯 칸. 한 칸 안의 화면은 위쪽 작은 탭으로 옮겨 다닌다.
 const GROUPS = {
   home: ['home'],
   money: ['ledger', 'meal', 'fixed', 'pantry'],
   plan: ['schedule', 'todo'],
   travel: ['travel', 'trips', 'packing'],
+  rule: ['rule'],
 };
 
 // 탭바를 다시 누르면 그 칸에서 마지막으로 보던 화면으로 돌아간다.
-const lastSeen = { home: 'home', money: 'ledger', plan: 'schedule', travel: 'travel' };
+const lastSeen = { home: 'home', money: 'ledger', plan: 'schedule', travel: 'travel', rule: 'rule' };
 
 let currentUser = null;
 let channels = [];
@@ -240,6 +243,7 @@ function enterMain(user) {
     onGo: goTab,
   });
   packing.init({ onChange: () => trip.rerender() });
+  rules.init({ userId: user.id });
   home.init({ onGo: goTab });
   routeHash();
   refreshAll();
@@ -267,6 +271,7 @@ function refreshAll() {
   travel.refresh();
   trip.refresh();
   packing.refresh();
+  rules.refresh();
 }
 
 function onVisible() {
@@ -302,7 +307,12 @@ function subscribeRealtime() {
     .channel('pantry-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pantry_items' }, () => pantry.refresh())
     .subscribe();
-  channels = [main, travelCh, pantryCh];
+  // 규칙도 나중에 생겼다 (schema.sql 43번). 같은 이유로 따로 둔다.
+  const ruleCh = sb
+    .channel('rule-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'rules' }, () => rules.refresh())
+    .subscribe();
+  channels = [main, travelCh, pantryCh, ruleCh];
 }
 
 // ---- 탭 (URL 해시) --------------------------------------------------------
@@ -328,6 +338,7 @@ function bindTabs() {
     else if (tab === 'meal') meal.openNew();
     else if (tab === 'pantry') pantry.openNew();
     else if (tab === 'trips' || tab === 'travel') trip.openNew();
+    else if (tab === 'rule') rules.openNew();
     // 홈에서 제일 자주 적는 것이 끼니다. 늘 오늘 날짜로 연다.
     else if (tab === 'home') meal.openNew({ today: true });
     else ledger.openNew(); // 가계부는 지출 입력

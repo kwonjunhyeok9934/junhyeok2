@@ -1602,6 +1602,44 @@ begin
     from jsonb_array_elements(v_rows) r;
 end $$;
 
+-- 43. 규칙 ------------------------------------------------------------------------
+-- 둘이 정해 둔 집안 규칙을 적어 두는 곳. 대분류(kind='rule' 카테고리) 아래에 한 줄씩
+-- 넣고, 안 지킨 횟수를 센다. 돈과는 아무 상관이 없다 — 가계부를 건드리지 않는다.
+
+alter table categories drop constraint if exists categories_kind_check;
+alter table categories add constraint categories_kind_check
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip', 'rule'));
+
+create table if not exists rules (
+  id         bigint generated always as identity primary key,
+  cat_id     bigint  references categories(id) on delete set null,   -- kind='rule' (집안일·돈…)
+  text       text    not null,
+  miss_count integer not null default 0 check (miss_count >= 0),     -- 안 지킨 횟수
+  missed_at  timestamptz,                                            -- 마지막으로 셌을 때
+  sort_order integer not null default 0,
+  created_by uuid    not null references auth.users(id),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists rules_cat_idx on rules (cat_id, sort_order, id);
+
+alter table rules enable row level security;
+drop policy if exists "auth all" on rules;
+create policy "auth all" on rules for all to authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'rules') then
+    alter publication supabase_realtime add table rules;
+  end if;
+end $$;
+
+-- 처음 쓸 때 비어 있으면 막막하다. 대분류 몇 개만 놓아 둔다 (규칙 자체는 안 넣는다).
+insert into categories (name, kind, sort_order)
+select v.name, 'rule', v.sort_order
+from (values ('집안일', 10), ('돈', 20), ('생활', 30)) as v(name, sort_order)
+where not exists (select 1 from categories c where c.kind = 'rule' and c.name = v.name);
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
