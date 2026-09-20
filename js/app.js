@@ -99,6 +99,18 @@ async function boot() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch((e) => console.warn('sw', e));
   }
+
+  keepStorage();
+}
+
+// 브라우저가 저장공간을 알아서 청소하면서 로그인이 풀리는 걸 막는다.
+// (사용자가 직접 '사이트 데이터 삭제'를 누르는 건 이걸로도 못 막는다.)
+async function keepStorage() {
+  try {
+    if (!navigator.storage?.persist) return;
+    if (await navigator.storage.persisted()) return;
+    await navigator.storage.persist();
+  } catch { /* 무시 */ }
 }
 
 // ---- 로그인 ---------------------------------------------------------------
