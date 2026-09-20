@@ -356,7 +356,7 @@ export function mealBuyMemo({ slot, menu, how, shop, lines }) {
 
 // 세트의 품목을 한 줄씩. 이름과 가격을 따로 줘서 화면에서 가격 열을 맞출 수 있게 한다.
 // [{ name: '참치', price: '300원' }, { name: '고추장', price: '4,500원' }]
-// 값이 안 실린 사 둔 것 줄은 가격 자리에 '남김'/'2개'/'다 씀' 이 들어간다 —
+// 값이 안 실린 사 둔 것 줄은 가격 자리에 '안 씀'/'2개 씀'/'다 씀' 이 들어간다 —
 // 열을 하나 더 두면 모든 줄에서 폭을 뺏어 품목 이름이 잘린다.
 // qtyOf(pantry_id) 로 그 품목을 몇 개 샀는지 알려 주면 '다 씀' 까지 가려 준다.
 export function buyItemTexts(lines, qtyOf = () => 1) {
@@ -499,7 +499,7 @@ export function planMealDelete(before) {
 // ---- 사 둔 것(품목을 담아 두고 식비에서 꺼내 쓴다) --------------------------------
 // 윙잇·컬리·쿠팡·마트·편의점에서 산 품목을 미리 담아 둔다. 담을 때는 가계부에 안 들어가고,
 // **처음 꺼내 먹을 때 한 번만** 그 세트에 값이 실린다. 다음에 또 먹으면 0원 줄로 붙어
-// 같은 돈을 두 번 세지 않는다. 다 먹었으면 '다 씀', 아직 남았으면 '남김'.
+// 다 먹었으면 '다 씀', 몇 개만 먹었으면 'N개 씀', 안 먹었으면 '안 씀'.
 
 // 개당 얼마인지 (보여 주기용). 4개에 10,000원이면 2,500원.
 export function pantryUnitPrice(item) {
@@ -525,23 +525,29 @@ export function pantryShare(item, { before = 0, used = 0 } = {}) {
   return at(b + u) - at(b);
 }
 
-// 사 둔 것 하나를 세트의 품목 줄로. 처음에는 '남김'(0개 끝냄) — 아직 안 썼으니 0원이다.
+// 사 둔 것 하나를 세트의 품목 줄로.
+// 끼니에 꺼내 왔다는 것은 먹었다는 뜻이다. 그래서 **한 개 먹은 것으로 시작**한다.
+// (before 는 화면이 다시 매긴다 — js/meal.js 의 repricePantryLine.)
+// 예전에는 0개로 시작해서, 꺼내 놓고 버튼을 따로 누르지 않으면 0원에 개수도
+// 안 줄어든 채로 저장됐다. 그게 기본값일 이유가 없다.
 export function pantryLine(item) {
   return {
     name: String(item?.name ?? '').trim(),
-    amount: pantryShare(item, { before: 0, used: 0 }),
+    amount: pantryShare(item, { before: 0, used: 1 }),
     pantry_id: item?.id,
-    used: 0,
+    used: 1,
   };
 }
 
-// 이 끼니에서 몇 개를 끝냈는지 보여 주는 말. 한 개짜리면 예전 그대로 남김/다 씀 이다.
+// 이 끼니에서 몇 개를 먹었는지 보여 주는 말.
+// 예전에는 '남김' 이라고 했는데, 0개를 먹었다는 뜻인지 남은 게 있다는 뜻인지
+// 읽는 사람마다 달라서 '안 씀' 으로 바꿨다.
 export function pantryUsedLabel(used, qty = 1) {
   const n = Math.max(0, Math.trunc(Number(used) || 0));
   const total = Math.max(1, Math.trunc(Number(qty) || 1));
-  if (n <= 0) return '남김';
+  if (n <= 0) return '안 씀';
   if (n >= total) return '다 씀';
-  return `${n}개`;
+  return `${n}개 씀`;
 }
 
 // 버튼을 누를 때 다음 개수. 0 → 1 → … → qty → 0 으로 돈다.

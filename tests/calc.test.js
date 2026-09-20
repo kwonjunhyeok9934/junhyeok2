@@ -399,9 +399,11 @@ const pantry = [
   { id: 4, how_id: 70, name: '양파 한 망', amount: 5000, bought_on: '2026-09-08', charged_buy_id: null, done: false },
 ];
 
-test('pantryLine: 세트에 붙일 품목 줄 (처음엔 0개 끝냄 = 남김이라 0원)', () => {
-  assert.deepEqual(pantryLine(pantry[0]), { name: '삼겹살 600g', amount: 0, pantry_id: 1, used: 0 });
-  assert.deepEqual(pantryLine(pantry[1]), { name: '두부', amount: 0, pantry_id: 2, used: 0 });
+test('pantryLine: 끼니에 꺼내 왔으면 한 개 먹은 것으로 시작한다', () => {
+  // 꺼내 놓고 버튼을 따로 누르지 않아도 먹은 것으로 잡힌다 (안 먹었으면 '안 씀' 으로 되돌린다).
+  assert.deepEqual(pantryLine(pantry[0]), { name: '삼겹살 600g', amount: 12000, pantry_id: 1, used: 1 });
+  assert.deepEqual(pantryLine({ id: 5, name: '즉석밥', amount: 55900, qty: 4 }),
+    { name: '즉석밥', amount: 13975, pantry_id: 5, used: 1 });
 });
 
 test('사 둔 것에서 꺼낸 줄은 가계부로 안 가고, 식비 합계에는 들어간다', () => {
@@ -444,11 +446,11 @@ test('pantryShare: 쓴 개수만큼 나누고, 다 쓰면 합이 산 값과 같�
   assert.equal(parts.reduce((a, b) => a + b, 0), 10000);
 });
 
-test('pantryUsedLabel / pantryNextUsed: 한 개짜리는 남김↔다 씀, 여러 개면 세어 간다', () => {
-  assert.equal(pantryUsedLabel(0, 1), '남김');
+test('pantryUsedLabel / pantryNextUsed: 한 개짜리는 안 씀↔다 씀, 여러 개면 세어 간다', () => {
+  assert.equal(pantryUsedLabel(0, 1), '안 씀');
   assert.equal(pantryUsedLabel(1, 1), '다 씀');
-  assert.equal(pantryUsedLabel(1, 3), '1개');
-  assert.equal(pantryUsedLabel(2, 3), '2개');
+  assert.equal(pantryUsedLabel(1, 3), '1개 씀');
+  assert.equal(pantryUsedLabel(2, 3), '2개 씀');
   assert.equal(pantryUsedLabel(3, 3), '다 씀');
   assert.equal(pantryUsedLabel(9, 3), '다 씀'); // 넘겨 적어도 다 씀
   assert.deepEqual([0, 1].map((n) => pantryNextUsed(n, 1)), [1, 0]);
@@ -506,7 +508,7 @@ test('cleanLines: 사 둔 것 꼬리표는 지키고, 직접 적은 줄은 두 �
   );
 });
 
-test('buyItemTexts: 또 먹은 줄은 가격 자리에 남김/개수/다 씀', () => {
+test('buyItemTexts: 값이 없는 줄은 가격 자리에 안 씀/개수/다 씀', () => {
   const qtyOf = (id) => (id === 4 ? 3 : 1); // 4번만 세 개짜리
   assert.deepEqual(
     buyItemTexts([
@@ -519,8 +521,8 @@ test('buyItemTexts: 또 먹은 줄은 가격 자리에 남김/개수/다 씀', (
     [
       { name: '삼겹살 600g', price: '12,000원' },
       { name: '두부', price: '다 씀' },
-      { name: '콩나물', price: '남김' },
-      { name: '비엔나', price: '2개' },
+      { name: '콩나물', price: '안 씀' },
+      { name: '비엔나', price: '2개 씀' },
       { name: '얻어온 파', price: '' },
     ],
   );

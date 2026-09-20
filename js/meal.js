@@ -528,7 +528,7 @@ function repricePantryLine(line) {
 }
 
 // 사 둔 것에서 꺼낸 줄. 이름·가격은 그 품목의 것이라 여기서 못 고치고, 몇 개 끝냈는지만 누른다.
-// 한 개짜리면 예전 그대로 남김 ↔ 다 씀 이고, 여러 개면 남김 → 1개 → 2개 → 다 씀 으로 돈다.
+// 한 개짜리면 다 씀 ↔ 안 씀 이고, 여러 개면 1개 씀 → 2개 씀 → … → 다 씀 → 안 씀 으로 돈다.
 // 값은 칸이 아니라 꼬리표(data-*)에 둔다 — 읽기 전용 칸을 흉내 내는 것보다 읽기가 쉽다.
 function pantryItemRowHtml(line) {
   const qty = qtyOfPantry(line.pantry_id);
@@ -652,7 +652,7 @@ function onSetsChange(e) {
   const item = pantry.items().find((p) => p.id === id);
   if (!s || !item) return;
   commitOpenSet();
-  s.lines = [...cleanLines(s.lines), pantryLine(item)];
+  s.lines = [...cleanLines(s.lines), repricePantryLine(pantryLine(item))];
   haptic();
   renderSets();
 }
