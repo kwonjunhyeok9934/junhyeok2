@@ -42,6 +42,7 @@ export function init({ userId }) {
     save: $('#pantry-save'), del: $('#pantry-delete'),
     shotRow: $('#pantry-shot-row'), shot: $('#pantry-shot'),
     shotFile: $('#pantry-shot-file'), shotNote: $('#pantry-shot-note'),
+    cam: $('#pantry-cam'), camFile: $('#pantry-cam-file'),
     shotRaw: $('#pantry-shot-raw'), shotText: $('#pantry-shot-text'),
   };
 
@@ -61,7 +62,12 @@ export function init({ userId }) {
     el.shotFile.value = ''; // 같은 사진을 다시 골라도 change 가 오게
     el.shotFile.click();
   });
+  el.cam.addEventListener('click', () => {
+    el.camFile.value = '';
+    el.camFile.click();
+  });
   el.shotFile.addEventListener('change', onShotPick);
+  el.camFile.addEventListener('change', onShotPick);
 }
 
 function unwrap({ data, error }) {
@@ -231,6 +237,7 @@ function openSheetFor(item) {
   el.charged.hidden = !item?.charged_buy_id;
   el.shotRow.hidden = !!item || !ocr.supported(); // 한 품목을 고칠 때는 스크린샷 읽기가 필요 없다
   el.shot.disabled = false;
+  el.cam.disabled = false;
   el.shotNote.hidden = true;
   el.shotRaw.hidden = true;
   el.shotRaw.open = false;
@@ -305,6 +312,7 @@ async function onShotPick(e) {
   const file = e.target.files?.[0];
   if (!file) return;
   el.shot.disabled = true;
+  el.cam.disabled = true;
   el.shotNote.hidden = false;
   el.shotNote.textContent = '읽는 중… 처음 한 번은 한글 데이터를 받느라 좀 걸려요';
   const show = (p) => { el.shotNote.textContent = `읽는 중… ${Math.round(p * 100)}%`; };
@@ -344,6 +352,7 @@ async function onShotPick(e) {
     el.shotNote.textContent = '스크린샷을 읽지 못했어요. 아래에 직접 적어 주세요.';
   } finally {
     el.shot.disabled = false;
+    el.cam.disabled = false;
   }
 }
 

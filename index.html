@@ -415,8 +415,13 @@
   <div class="sheet-panel">
     <form id="pantry-form">
       <div id="pantry-shot-row">
-        <button type="button" id="pantry-shot" class="btn wide">📷 주문 스크린샷에서 읽기</button>
+        <div class="field-label">주문 내역에서 읽기</div>
+        <div class="row">
+          <button type="button" id="pantry-shot" class="btn grow">🖼 스크린샷에서</button>
+          <button type="button" id="pantry-cam" class="btn grow">📷 사진 찍기</button>
+        </div>
         <input id="pantry-shot-file" type="file" accept="image/*" hidden>
+        <input id="pantry-cam-file" type="file" accept="image/*" capture="environment" hidden>
         <p id="pantry-shot-note" class="hint" hidden></p>
         <details id="pantry-shot-raw" hidden>
           <summary>읽은 글 보기</summary>
