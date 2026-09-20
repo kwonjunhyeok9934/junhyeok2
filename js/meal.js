@@ -77,7 +77,10 @@ export function init({ userId, onTxChange: cb }) {
   el.sets.addEventListener('click', onSetsClick);
   el.sets.addEventListener('input', onSetsInput);
   el.sets.addEventListener('change', onSetsChange);
-  el.sets.addEventListener('keydown', onItemRowsKeydown);
+  el.sets.addEventListener('keydown', (e) => {
+    if (e.target.dataset.role !== 'new-how') { onItemRowsKeydown(e); return; }
+    if (e.key === 'Enter') { e.preventDefault(); createHow(Number(e.target.closest('[data-key]').dataset.key)); }
+  });
 
   el.menu.addEventListener('input', updateSaveState);
   el.form.addEventListener('submit', (e) => { e.preventDefault(); save(); });
@@ -364,6 +367,25 @@ function applyAutoMenu() {
   updateSaveState();
 }
 
+// 목록에 없는 곳을 그 자리에서 만들어 바로 고른 상태로 둔다.
+async function createHow(key) {
+  const s = state.sets.find((x) => x.key === key);
+  const input = el.sets.querySelector(`[data-key="${key}"] [data-role="new-how"]`);
+  const name = input?.value ?? '';
+  if (!s || !name.trim()) return;
+  try {
+    const created = await addCategory(name, 'meal_how', state.cats);
+    state.cats = await fetchCategories();
+    s.howId = created.id;
+    s.picking = false;
+    s.addingHow = false;
+    renderSets();
+  } catch (err) {
+    console.error(err);
+    toast('산 곳을 추가하지 못했어요');
+  }
+}
+
 async function createPlace() {
   const name = el.newPlace.value;
   if (!name.trim()) return;
@@ -385,6 +407,16 @@ async function createPlace() {
 
 function addSet() {
   commitOpenSet();
+  // 아직 아무것도 안 고른 세트가 있으면 새로 만들지 않고 그걸 다시 연다.
+  // (고르는 화면에서 ＋ 를 또 누르면 빈 '어떻게?' 칸만 쌓였다.)
+  const blank = state.sets.find((x) => !x.howId);
+  if (blank) {
+    blank.picking = true;
+    state.openKey = blank.key;
+    renderSets();
+    el.sets.querySelector(`[data-key="${blank.key}"]`)?.scrollIntoView({ block: 'nearest' });
+    return;
+  }
   const key = state.nextKey++;
   state.sets.push({ key, id: null, howId: null, shop: '', txId: null, lines: [], picking: true });
   state.openKey = key;
@@ -411,11 +443,16 @@ function openSetHtml(s) {
           <div class="field-label">어떻게 샀어요?</div>
           <button type="button" class="icon-btn" data-act="del-set" aria-label="그만두기">✕</button>
         </div>
-        ${hows.length
-          ? `<div class="chips">
+        <div class="chips">
           ${hows.map((c) => `<button type="button" class="chip ${c.id === s.howId ? 'selected' : ''}" data-act="pick" data-id="${c.id}">${escapeHtml(c.name)}</button>`).join('')}
+          <button type="button" class="chip add" data-act="new-how">＋</button>
+        </div>
+        ${s.addingHow
+          ? `<div class="row" style="margin-top:8px">
+          <input type="text" data-role="new-how" placeholder="새 이름 (예: 이마트)" maxlength="20" autocomplete="off">
+          <button type="button" class="btn small" data-act="new-how-ok">추가</button>
         </div>`
-          : '<p class="hint">설정 → 카테고리에서 \'식비 · 어떻게\' 를 먼저 만들어 주세요.</p>'}
+          : ''}
       </div>`;
   }
   const how = nameOf(s.howId);
@@ -552,7 +589,14 @@ function onSetsClick(e) {
     renderSets();
     return;
   }
-  if (act === 'repick') { s.picking = true; renderSets(); return; }
+  if (act === 'new-how') {
+    s.addingHow = true;
+    renderSets();
+    el.sets.querySelector(`[data-key="${key}"] [data-role="new-how"]`)?.focus();
+    return;
+  }
+  if (act === 'new-how-ok') { createHow(key); return; }
+  if (act === 'repick') { s.picking = true; s.addingHow = false; renderSets(); return; }
   if (act === 'open-set') {
     commitOpenSet();
     state.openKey = key;
