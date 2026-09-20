@@ -125,6 +125,13 @@ export async function refresh() {
 // 식비 탭이 드롭다운을 만들 때 쓴다.
 export const items = () => state.items;
 
+// 식비에서 사 둔 것을 꺼내 쓰고 저장하면 load() 로 최신 값을 받아 오지만,
+// 목록 화면은 그대로 남아 '다 씀' 으로 바뀌지 않았다. 받아 온 것을 그린다.
+export function redraw() {
+  if (!initialized || sheetOpen()) return; // 담는 중에는 건드리지 않는다
+  render();
+}
+
 // ---- 목록 화면 --------------------------------------------------------------
 
 const catsOf = (kind) => state.cats.filter((c) => c.kind === kind);

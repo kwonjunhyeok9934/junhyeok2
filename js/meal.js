@@ -125,6 +125,7 @@ export async function refresh() {
     state.profiles = profiles;
     state.meals = meals.map((m) => ({ ...m, buys: sortMealBuys(m.buys) }));
     render();
+    pantry.redraw(); // 위 pantry.load() 로 받아 온 남은 개수를 사 둔 것 목록에도 반영한다
   } catch (err) {
     console.error(err);
     el.week.innerHTML = needsSql(err)
