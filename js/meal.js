@@ -27,6 +27,7 @@ const state = {
   userId: null,
   editing: null,      // 수정 중인 끼니, 새 항목이면 null
   placeId: null,
+  menuAuto: '',       // 장소를 고르며 우리가 채워 넣은 메뉴. 직접 쓴 것과 구분하려고 들고 있는다.
   sets: [],           // [{ key, id, howId, shop, txId, lines:[{name,amount}], picking }]
   openKey: null,      // 펼쳐진 세트의 key. null 이면 전부 접힘
   nextKey: 1,
@@ -288,6 +289,7 @@ function openMealSheet(m, preset = {}) {
   el.form.querySelector(`input[name="meal-slot"][value="${slot}"]`)?.setAttribute('checked', 'checked');
   el.form.querySelectorAll('input[name="meal-slot"]').forEach((r) => { r.checked = r.value === slot; });
   el.menu.value = m?.menu ?? '';
+  state.menuAuto = '';
 
   state.placeId = m?.place_id ?? defaultPlaceId();
   state.nextKey = 1;
@@ -312,7 +314,6 @@ function openMealSheet(m, preset = {}) {
   updateSaveState();
 
   openSheet(el.sheet);
-  if (!m) setTimeout(() => el.menu.focus(), 250);
 }
 
 // 할일·일정·고정비의 '누구' 라디오와 같은 패턴. 앞머리만 '같이'.
@@ -346,6 +347,21 @@ function onPlaceClick(e) {
   }
   state.placeId = Number(chip.dataset.id);
   renderPlaces();
+  applyAutoMenu();
+}
+
+// 메뉴가 뻔한 장소. 여기에 적어 두면 장소를 고를 때 메뉴가 저절로 들어간다.
+const AUTO_MENU = { 회사: '회사밥' };
+
+// 직접 적은 메뉴는 건드리지 않는다. 비어 있거나, 앞서 우리가 넣어 둔
+// 값 그대로일 때만 새 장소에 맞춰 바꾼다.
+function applyAutoMenu() {
+  const next = AUTO_MENU[nameOf(state.placeId)] ?? '';
+  const cur = el.menu.value.trim();
+  if (cur && cur !== state.menuAuto) return;
+  el.menu.value = next;
+  state.menuAuto = next;
+  updateSaveState();
 }
 
 async function createPlace() {
@@ -358,6 +374,7 @@ async function createPlace() {
     el.newPlace.value = '';
     el.newPlaceRow.hidden = true;
     renderPlaces();
+    applyAutoMenu();
   } catch (err) {
     console.error(err);
     toast('장소를 추가하지 못했어요');
