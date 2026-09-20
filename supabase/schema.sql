@@ -1517,6 +1517,91 @@ end $$;
 -- 데이터베이스가 직접 막는다. 위에서 중복을 치운 뒤라 지금은 반드시 걸린다.
 create unique index if not exists categories_kind_name_idx on categories (kind, name);
 
+-- 42. 사 둔 것은 '살 때' 가계부에 들어간다 ----------------------------------------
+-- 지금까지는 담아 둘 때 가계부에 안 넣고, 꺼내 먹는 첫 끼니가 값을 냈다. 실제로는
+-- 장 볼 때 이미 카드에서 돈이 나간다. 그래서 담는 순간 지출로 넣고, 식비에서 꺼내
+-- 쓰는 것은 '그 끼니에 얼마어치 먹었나' 를 보여 주기만 한다(돈은 또 안 나간다).
+--
+-- 한 번 담은 것(한 번의 장보기)이 거래 한 건이다. 같이 담은 품목들이 한
+-- transaction_id 를 나눠 갖고, 그 합이 거래 금액이 된다.
+
+alter table pantry_items add column if not exists transaction_id bigint references transactions(id) on delete set null;
+create index if not exists pantry_items_tx_idx on pantry_items (transaction_id);
+
+-- 거래에 매달린 품목들의 합으로 금액을 맞춘다. 남은 것이 없거나 합이 0이면 거래를 지운다.
+-- 맨 앞에서 거래가 아직 있는지 보는 것이 중요하다 — 거래를 지우면 품목의 transaction_id 가
+-- null 이 되면서 아래 트리거가 다시 이 함수를 부르는데, 그 고리를 여기서 끊는다.
+create or replace function pantry_tx_sync(p_tx bigint) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_sum integer;
+begin
+  if p_tx is null then return; end if;
+  if not exists (select 1 from transactions where id = p_tx) then return; end if;
+  select coalesce(sum(amount), 0) into v_sum from pantry_items where transaction_id = p_tx;
+  if v_sum <= 0 then
+    delete from transactions where id = p_tx;
+  else
+    update transactions set amount = v_sum where id = p_tx;
+  end if;
+end $$;
+
+create or replace function pantry_item_tx_sync() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'DELETE' then
+    perform pantry_tx_sync(old.transaction_id);
+    return old;
+  end if;
+  if old.transaction_id is distinct from new.transaction_id then
+    perform pantry_tx_sync(old.transaction_id);
+  end if;
+  if old.amount is distinct from new.amount then
+    perform pantry_tx_sync(new.transaction_id);
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists pantry_items_tx_sync on pantry_items;
+create trigger pantry_items_tx_sync
+  after update or delete on pantry_items
+  for each row execute function pantry_item_tx_sync();
+
+-- 담기: 거래 한 건을 만들고 품목들을 거기에 매단다. 한 번에 끝나야 한다 —
+-- 중간에 끊기면 가계부에 주인 없는 거래만 남는다.
+create or replace function add_pantry_items(p jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_user uuid   := auth.uid();
+  v_date date   := coalesce((p ->> 'date')::date, current_date);
+  v_how  bigint := nullif(p ->> 'how_id', '')::bigint;
+  v_rows jsonb  := coalesce(p -> 'rows', '[]'::jsonb);
+  v_sum  integer;
+  v_cat  bigint;
+  v_tx   bigint;
+begin
+  if jsonb_array_length(v_rows) = 0 then return; end if;
+
+  select coalesce(sum(greatest(0, coalesce((r ->> 'amount')::int, 0))), 0) into v_sum
+    from jsonb_array_elements(v_rows) r;
+
+  if v_sum > 0 then
+    select id into v_cat from categories where kind = 'expense' and name = '식비' order by id limit 1;
+    insert into transactions (kind, amount, category_id, date, memo, created_by)
+    values ('expense', v_sum, v_cat, v_date,
+            coalesce(nullif(p ->> 'memo', ''), '사 둔 것'), v_user)
+    returning id into v_tx;
+  end if;
+
+  insert into pantry_items (how_id, name, amount, qty, left_qty, bought_on, transaction_id, created_by)
+  select v_how,
+         r ->> 'name',
+         greatest(0, coalesce((r ->> 'amount')::int, 0)),
+         greatest(1, coalesce((r ->> 'qty')::int, 1)),
+         greatest(1, coalesce((r ->> 'qty')::int, 1)),
+         v_date, v_tx, v_user
+    from jsonb_array_elements(v_rows) r;
+end $$;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles

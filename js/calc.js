@@ -310,6 +310,13 @@ export function mealAmount(meal) {
   return (meal?.buys ?? []).reduce((a, b) => a + buyAmount(b), 0);
 }
 
+// 식비 탭이 보여 주는 값. 사 둔 것에서 꺼낸 몫까지 더한다.
+// 그 돈은 장 본 날 이미 가계부로 갔지만, **먹은 것은 이 끼니**다. 그래서
+// 식비 합계(이번 주에 얼마어치 먹었나)와 가계부 합계(언제 얼마를 썼나)는 서로 다르다.
+export function mealSpent(meal) {
+  return (meal?.buys ?? []).reduce((a, b) => a + buyTotal(b), 0);
+}
+
 // 'date|slot' 로 묶는다. 같은 칸에 기록이 여럿이면(둘이 따로 먹은 날) 만든 순서대로.
 export function groupMealsBySlot(meals) {
   const map = new Map();
@@ -376,7 +383,7 @@ export function sumMeals(meals) {
   let paid = 0;
   let buys = 0;
   for (const m of meals) {
-    const a = mealAmount(m);
+    const a = mealSpent(m);
     total += a;
     buys += (m.buys ?? []).length;
     if (a > 0) paid++;
@@ -387,7 +394,7 @@ export function sumMeals(meals) {
 // Map<date, 그날 합계>
 export function sumMealsByDate(meals) {
   const map = new Map();
-  for (const m of meals) map.set(m.date, (map.get(m.date) ?? 0) + mealAmount(m));
+  for (const m of meals) map.set(m.date, (map.get(m.date) ?? 0) + mealSpent(m));
   return map;
 }
 
@@ -399,7 +406,7 @@ export function sumMealsByHow(meals, categories) {
     for (const b of m.buys ?? []) {
       const key = b.how_id ?? null;
       const cur = totals.get(key) ?? { total: 0, count: 0 };
-      cur.total += buyAmount(b);
+      cur.total += buyTotal(b);
       cur.count += 1;
       totals.set(key, cur);
     }
@@ -445,7 +452,9 @@ export function planMealSave(before, input, cats) {
     const was = raw.id != null ? wasById.get(raw.id) : null;
     if (was) kept.add(was.id);
 
-    const amount = lines.reduce((a, l) => a + l.amount, 0);
+    // 사 둔 것에서 꺼낸 줄은 가계부로 가지 않는다. 장 볼 때 이미 낸 돈이라
+    // 여기서 또 세면 같은 돈을 두 번 세게 된다. (식비 합계에는 buyTotal 로 들어간다.)
+    const amount = lines.reduce((a, l) => a + (l.pantry_id ? 0 : l.amount), 0);
     const payload = {
       amount,
       category_id: resolveMealCategoryId(cats, was?.tx ?? null),
@@ -492,15 +501,6 @@ export function planMealDelete(before) {
 // **처음 꺼내 먹을 때 한 번만** 그 세트에 값이 실린다. 다음에 또 먹으면 0원 줄로 붙어
 // 같은 돈을 두 번 세지 않는다. 다 먹었으면 '다 씀', 아직 남았으면 '남김'.
 
-// 지금 꺼내면 세트에 실릴 값. 다른 세트가 이미 값을 가져갔으면 0.
-// buyId 는 지금 고치고 있는 세트 — 그 세트가 가져간 값이면 그대로 다시 싣는다
-// (뺐다가 도로 넣었을 때 돈이 사라지면 안 된다).
-export function pantryPrice(item, buyId = null) {
-  const holder = item?.charged_buy_id ?? null;
-  const price = Math.max(0, Math.trunc(Number(item?.amount) || 0));
-  return holder !== null && holder !== buyId ? 0 : price;
-}
-
 // 개당 얼마인지 (보여 주기용). 4개에 10,000원이면 2,500원.
 export function pantryUnitPrice(item) {
   const total = Math.max(0, Math.trunc(Number(item?.amount) || 0));
@@ -514,10 +514,9 @@ export function pantryUnitPrice(item) {
 // 누적 지점끼리 빼는 방식이라, 다 쓰고 나면 조각들의 합이 정확히 전가가 된다.
 // (3개에 10,000원 → 3,333 / 3,333 / 3,334 — 마지막 한 개가 잔돈을 가져간다.)
 //
-// 옛 방식(전가 한 번)으로 이미 값이 실린 품목은 건드리지 않는다. 그 돈은 벌써
-// 가계부에 들어가 있어서, 여기서 또 매기면 같은 돈을 두 번 세게 된다.
-export function pantryShare(item, { before = 0, used = 0, buyId = null } = {}) {
-  if ((item?.charged_buy_id ?? null) !== null) return pantryPrice(item, buyId);
+// 이 값은 가계부로 가지 않는다. 돈은 장 볼 때 이미 나갔다(사 둔 것을 담는 순간
+// 가계부에 지출로 들어간다). 여기서는 '그 끼니에 얼마어치를 먹었나' 만 보여 준다.
+export function pantryShare(item, { before = 0, used = 0 } = {}) {
   const total = Math.max(0, Math.trunc(Number(item?.amount) || 0));
   const qty = Math.max(1, Math.trunc(Number(item?.qty) || 1));
   const at = (n) => (n >= qty ? total : Math.floor((total * n) / qty));
@@ -527,10 +526,10 @@ export function pantryShare(item, { before = 0, used = 0, buyId = null } = {}) {
 }
 
 // 사 둔 것 하나를 세트의 품목 줄로. 처음에는 '남김'(0개 끝냄) — 아직 안 썼으니 0원이다.
-export function pantryLine(item, buyId = null) {
+export function pantryLine(item) {
   return {
     name: String(item?.name ?? '').trim(),
-    amount: pantryShare(item, { before: 0, used: 0, buyId }),
+    amount: pantryShare(item, { before: 0, used: 0 }),
     pantry_id: item?.id,
     used: 0,
   };
@@ -553,22 +552,18 @@ export function pantryNextUsed(used, qty = 1) {
 }
 
 // 드롭다운에 올릴 것: 그 카테고리에서 아직 안 끝난 품목 중 이 끼니가 아직 안 쓴 것. 최근에 산 것부터.
-export function pantryChoices(items, { howId = null, usedIds = [], buyId = null } = {}) {
+export function pantryChoices(items, { howId = null, usedIds = [] } = {}) {
   const used = new Set(usedIds);
   return (items ?? [])
     .filter((it) => !it.done && it.how_id === howId && !used.has(it.id))
-    .map((it) => ({ ...it, price: pantryPrice(it, buyId) }))
+    .map((it) => ({ ...it }))
     .sort((a, b) => (a.bought_on < b.bought_on ? 1 : a.bought_on > b.bought_on ? -1 : (b.id ?? 0) - (a.id ?? 0)));
 }
 
 // '삼겹살 600g · 12,000원' / 여러 개면 '· 개당 2,500원 · 3개 남음'
-// 옛 방식으로 이미 값을 낸 것은 '· 이미 냄'.
-export function pantryOptionLabel(item, buyId = null) {
+export function pantryOptionLabel(item) {
   const name = String(item?.name ?? '').trim();
   const qty = Math.max(1, Math.trunc(Number(item?.qty) || 1));
-  if ((item?.charged_buy_id ?? null) !== null && (item?.charged_buy_id ?? null) !== buyId) {
-    return `${name} · 이미 냄${qty > 1 ? ` · ${pantryLeftOf(item)}개 남음` : ''}`;
-  }
   const total = Math.max(0, Math.trunc(Number(item?.amount) || 0));
   if (qty <= 1) return `${name} · ${total ? `${formatWon(total)}원` : '값 없음'}`;
   return `${name} · 개당 ${formatWon(pantryUnitPrice(item))}원 · ${pantryLeftOf(item)}개 남음`;
@@ -619,17 +614,19 @@ export function pantryStats(items) {
   let left = 0;
   let units = 0;
   let done = 0;
-  let waiting = 0;
+  let leftValue = 0;
   for (const it of items ?? []) {
     if (it.done) {
       done += 1;
       continue;
     }
     left += 1;
-    units += pantryLeftOf(it);
-    if (it.charged_buy_id == null) waiting += Math.max(0, Math.trunc(Number(it.amount) || 0));
+    const n = pantryLeftOf(it);
+    units += n;
+    // 아직 안 먹고 남은 값어치. 돈은 살 때 이미 냈으니 '앞으로 나갈 돈' 이 아니다.
+    leftValue += pantryShare(it, { before: Math.max(1, Math.trunc(Number(it.qty) || 1)) - n, used: n });
   }
-  return { left, units, done, waiting };
+  return { left, units, done, leftValue };
 }
 
 // ---- 주문 스크린샷 읽기 ---------------------------------------------------------

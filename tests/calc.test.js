@@ -7,9 +7,9 @@ import {
   calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
   dayName, dayLabel, weekStart, weekDays, weekLabel, slotOfHour, resolveMealCategoryId,
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee,
-  buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
+  buyTotal, buyAmount, mealAmount, mealSpent, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
-  pantryPrice, pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
+  pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
   pantryShare, pantryUnitPrice,
   pantryUsedLabel, pantryNextUsed, pantryLeftOf,
   parseOrderText, guessOrderHow, guessOrderDate, unspace,
@@ -351,21 +351,23 @@ test('mealAmount: 한 끼의 세트 금액을 모두 더한다', () => {
 });
 
 test('sumMeals: 끼니 수·세트 수·돈 쓴 끼니를 함께 센다', () => {
-  assert.deepEqual(sumMeals(meals), { total: 25000, count: 3, paid: 1, free: 2, buys: 3 });
+  // 합계는 '먹은 값어치'(줄에 적힌 값) 다. 가계부에서 수입으로 바뀌었든 말든
+  // 그 끼니에 먹은 것은 그대로다 — 가계부 금액은 mealAmount 가 따로 본다.
+  assert.deepEqual(sumMeals(meals), { total: 30000, count: 3, paid: 2, free: 1, buys: 3 });
   assert.deepEqual(sumMeals([]), { total: 0, count: 0, paid: 0, free: 0, buys: 0 });
 });
 
 test('sumMealsByDate: 날짜별 합계', () => {
   const by = sumMealsByDate(meals);
   assert.equal(by.get('2026-09-07'), 25000);
-  assert.equal(by.get('2026-09-08'), 0);
+  assert.equal(by.get('2026-09-08'), 5000);
 });
 
 test('sumMealsByHow: 어떻게별 합계, 큰 순', () => {
   assert.deepEqual(sumMealsByHow(meals, mealCats), [
     { id: 70, name: '마트', total: 18000, count: 1 },
     { id: 10, name: '컬리', total: 7000, count: 1 },
-    { id: 40, name: '배달', total: 0, count: 1 },
+    { id: 40, name: '배달', total: 5000, count: 1 },
   ]);
 });
 
@@ -397,17 +399,29 @@ const pantry = [
   { id: 4, how_id: 70, name: '양파 한 망', amount: 5000, bought_on: '2026-09-08', charged_buy_id: null, done: false },
 ];
 
-test('pantryPrice: 처음 꺼낼 때만 값이 실린다', () => {
-  assert.equal(pantryPrice(pantry[0]), 12000);          // 아직 아무도 안 가져감
-  assert.equal(pantryPrice(pantry[1]), 0);              // 다른 세트가 이미 냈다
-  assert.equal(pantryPrice(pantry[1], 91), 3000);       // 그 값을 낸 세트를 다시 고치는 중이면 그대로
-  assert.equal(pantryPrice(pantry[1], 92), 0);          // 다른 세트에서는 여전히 0
-  assert.equal(pantryPrice({ amount: -5 }), 0);
-});
-
 test('pantryLine: 세트에 붙일 품목 줄 (처음엔 0개 끝냄 = 남김이라 0원)', () => {
   assert.deepEqual(pantryLine(pantry[0]), { name: '삼겹살 600g', amount: 0, pantry_id: 1, used: 0 });
   assert.deepEqual(pantryLine(pantry[1]), { name: '두부', amount: 0, pantry_id: 2, used: 0 });
+});
+
+test('사 둔 것에서 꺼낸 줄은 가계부로 안 가고, 식비 합계에는 들어간다', () => {
+  const four = { id: 5, how_id: 10, name: '즉석밥', amount: 55900, qty: 4, left_qty: 4, done: false };
+  const line = { ...pantryLine(four), used: 1, amount: pantryShare(four, { used: 1 }) };
+  assert.equal(line.amount, 13975);
+
+  const p = planMealSave(null, {
+    ...base,
+    buys: [{ id: null, howId: 10, lines: [line, { name: '콜라', amount: 2000 }] }],
+  }, mealCats);
+  // 가계부로 가는 것은 사 둔 것이 아닌 줄만
+  assert.equal(p.buys[0].tx.payload.amount, 2000);
+  // 세트에는 두 줄 다 남는다
+  assert.deepEqual(p.buys[0].patch.lines.map((l) => l.amount), [13975, 2000]);
+
+  // 식비 탭이 보여 주는 값에는 사 둔 것 몫도 들어간다
+  const meal = { buys: [{ lines: [line, { name: '콜라', amount: 2000 }], tx: { kind: 'expense', amount: 2000 } }] };
+  assert.equal(mealAmount(meal), 2000);   // 가계부에 실제로 잡힌 돈
+  assert.equal(mealSpent(meal), 15975);   // 그 끼니에 먹은 값어치
 });
 
 test('pantryUnitPrice: 개당 얼마', () => {
@@ -416,23 +430,18 @@ test('pantryUnitPrice: 개당 얼마', () => {
   assert.equal(pantryUnitPrice({ amount: 12000 }), 12000); // 개수가 없으면 한 개짜리
 });
 
-test('pantryShare: 쓴 개수만큼 나눠 내고, 다 쓰면 합이 전가와 같다', () => {
-  const four = { amount: 10000, qty: 4, charged_buy_id: null };
+test('pantryShare: 쓴 개수만큼 나누고, 다 쓰면 합이 산 값과 같다', () => {
+  const four = { amount: 10000, qty: 4 };
   assert.equal(pantryShare(four, { before: 0, used: 0 }), 0);      // 남김이면 안 낸다
   assert.equal(pantryShare(four, { before: 0, used: 1 }), 2500);
   assert.equal(pantryShare(four, { before: 2, used: 2 }), 5000);   // 뒤쪽 두 개
   assert.equal(pantryShare(four, { before: 0, used: 9 }), 10000);  // 넘겨 적어도 전가까지
 
   // 나누어떨어지지 않으면 마지막 한 개가 잔돈을 가져간다.
-  const three = { amount: 10000, qty: 3, charged_buy_id: null };
+  const three = { amount: 10000, qty: 3 };
   const parts = [0, 1, 2].map((before) => pantryShare(three, { before, used: 1 }));
   assert.deepEqual(parts, [3333, 3333, 3334]);
   assert.equal(parts.reduce((a, b) => a + b, 0), 10000);
-
-  // 옛 방식으로 이미 전가를 낸 품목은 건드리지 않는다.
-  const old = { amount: 3000, qty: 4, charged_buy_id: 91 };
-  assert.equal(pantryShare(old, { before: 0, used: 1 }), 0);
-  assert.equal(pantryShare(old, { before: 0, used: 1, buyId: 91 }), 3000);
 });
 
 test('pantryUsedLabel / pantryNextUsed: 한 개짜리는 남김↔다 씀, 여러 개면 세어 간다', () => {
@@ -461,13 +470,13 @@ test('pantryChoices: 다 쓴 것·다른 카테고리·이미 고른 것은 빼�
   assert.deepEqual(pantryChoices(pantry, { howId: 70 }).map((c) => c.id), [4]);
   assert.deepEqual(pantryChoices(pantry, { howId: 99 }), []);
   assert.deepEqual(pantryChoices(null, { howId: 10 }), []);
-  assert.equal(pantryChoices(pantry, { howId: 10 })[0].price, 0); // 두부는 이미 냈다
 });
 
-test('pantryOptionLabel: 값이 남았으면 가격, 이미 냈으면 그렇게', () => {
+test('pantryOptionLabel: 한 개짜리는 값, 여러 개면 개당 값과 남은 개수', () => {
   assert.equal(pantryOptionLabel(pantry[0]), '삼겹살 600g · 12,000원');
-  assert.equal(pantryOptionLabel(pantry[1]), '두부 · 이미 냄');
-  assert.equal(pantryOptionLabel(pantry[1], 91), '두부 · 3,000원');
+  assert.equal(pantryOptionLabel(pantry[1]), '두부 · 3,000원');
+  assert.equal(pantryOptionLabel({ name: '즉석밥', amount: 55900, qty: 4, left_qty: 3 }),
+    '즉석밥 · 개당 13,975원 · 3개 남음');
 });
 
 test('usedPantryIds: 지금 고치는 끼니가 이미 쓰고 있는 품목', () => {
@@ -525,28 +534,26 @@ test('groupPantryByHow: 칩 순서대로 묶고 최근에 산 것부터', () => 
   assert.deepEqual(groupPantryByHow([{ id: 9, how_id: null, name: '어디선가', amount: 0 }], mealCats)[0].name, '기타');
 });
 
-test('pantryStats: 남은 개수와 아직 가계부에 안 들어간 돈', () => {
-  assert.deepEqual(pantryStats(pantry), { left: 3, units: 3, done: 1, waiting: 17000 }); // 12000 + 5000
-  assert.deepEqual(pantryStats([{ qty: 3, left_qty: 2, done: false, amount: 9000, charged_buy_id: null }]),
-    { left: 1, units: 2, done: 0, waiting: 9000 });
-  assert.deepEqual(pantryStats([]), { left: 0, units: 0, done: 0, waiting: 0 });
+test('pantryStats: 남은 개수와 아직 안 먹고 남은 값어치', () => {
+  // 돈은 살 때 이미 냈다. leftValue 는 '앞으로 나갈 돈' 이 아니라 냉장고에 남은 값어치다.
+  assert.deepEqual(pantryStats(pantry), { left: 3, units: 3, done: 1, leftValue: 20000 });
+  // 3개에 9,000원 중 하나를 먹었으면 6,000원어치가 남는다
+  assert.deepEqual(pantryStats([{ qty: 3, left_qty: 2, done: false, amount: 9000 }]),
+    { left: 1, units: 2, done: 0, leftValue: 6000 });
+  assert.deepEqual(pantryStats([]), { left: 0, units: 0, done: 0, leftValue: 0 });
 });
 
-test('planMealSave: 쓴 개수만큼만 가계부로 간다', () => {
-  const four = { id: 5, how_id: 10, name: '즉석밥', amount: 10000, qty: 4, left_qty: 4, charged_buy_id: null, done: false };
+test('planMealSave: 사 둔 것만 든 세트는 거래를 만들지 않는다', () => {
+  const four = { id: 5, how_id: 10, name: '즉석밥', amount: 10000, qty: 4, left_qty: 4, done: false };
   const p = planMealSave(null, {
     ...base,
     buys: [
-      // 네 개에 10,000원짜리에서 한 개를 썼다 → 2,500원
       { id: null, howId: 10, lines: [{ ...pantryLine(four), used: 1, amount: pantryShare(four, { used: 1 }) }] },
-      // 꺼내 놓기만 하고 안 쓴 것(남김)은 0원이라 거래를 만들지 않는다
-      { id: null, howId: 70, lines: [pantryLine(pantry[0])] },
     ],
   }, mealCats);
-  assert.equal(p.buys[0].tx.op, 'insert');
-  assert.equal(p.buys[0].tx.payload.amount, 2500);
-  assert.equal(p.buys[0].patch.lines[0].used, 1);           // 몇 개 끝냈는지 그대로 실려 간다
-  assert.deepEqual(p.buys[1].tx, { op: 'none', id: null });
+  assert.deepEqual(p.buys[0].tx, { op: 'none', id: null }); // 돈은 장 본 날 이미 나갔다
+  assert.equal(p.buys[0].patch.lines[0].amount, 2500);      // 먹은 값어치는 그대로 실려 간다
+  assert.equal(p.buys[0].patch.lines[0].used, 1);
 });
 
 // ---- planMealSave -------------------------------------------------------------

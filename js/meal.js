@@ -4,15 +4,16 @@
 // 저장은 save_meal RPC 한 번으로 원자적으로 처리한다 (중간에 실패하면 아무것도 안 쓰인다).
 //
 // '사 둔 것'(js/pantry.js 탭): 미리 담아 둔 품목을 세트에서 드롭다운으로 꺼낸다.
-// 담을 때는 가계부에 안 들어가고, 그 끼니에서 **쓴 개수만큼만** 값이 실린다
-// (4개에 10,000원이면 한 개에 2,500원). 값은 calc.js 의 pantryShare 가 매긴다.
+// 돈은 **살 때** 이미 가계부로 갔다. 그래서 여기서 꺼낸 줄은 거래 금액에 안 들어가고,
+// 쓴 개수만큼(4개에 10,000원이면 한 개에 2,500원) **식비 합계에만** 잡힌다.
+// 그래서 식비 합계(이번 주에 얼마어치 먹었나)와 가계부 합계(언제 얼마를 썼나)는 다르다.
 import { sb } from './supabase.js';
 import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirmDialog, haptic, animateNumber } from './ui.js';
 import {
   todayLocal, shiftDay, formatWon, dayName,
   MEAL_SLOTS, SLOT_LABEL, weekStart, weekDays, weekLabel, slotOfHour,
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL,
-  buyTotal, buyAmount, mealAmount, sortMealBuys, buyItemTexts, tagColor,
+  buyTotal, buyAmount, mealAmount, mealSpent, sortMealBuys, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, pantryUsedLabel, pantryNextUsed,
   pantryShare, pantryLeftOf,
@@ -200,7 +201,7 @@ function render() {
 }
 
 function mealRow(m, slot, first, last, who, i) {
-  const amount = mealAmount(m);
+  const amount = mealSpent(m);
   const title = (m.menu || m.buys.flatMap((b) => cleanLines(b.lines).map((l) => l.name)).filter(Boolean).join(', ') || '기록').trim();
   const place = nameOf(m.place_id);
   const p = m.eater ? who.get(m.eater) : null;
@@ -487,13 +488,12 @@ function pantrySelectHtml(s) {
   const choices = pantryChoices(pantry.items(), {
     howId: s.howId,
     usedIds: usedPantryIds(state.sets),
-    buyId: s.id,
   });
   if (!choices.length) return '';
   return `
     <select data-role="pantry" aria-label="사 둔 것에서 가져오기">
       <option value="">＋ 사 둔 것에서 가져오기</option>
-      ${choices.map((c) => `<option value="${c.id}">${escapeHtml(pantryOptionLabel(c, s.id))}</option>`).join('')}
+      ${choices.map((c) => `<option value="${c.id}">${escapeHtml(pantryOptionLabel(c))}</option>`).join('')}
     </select>`;
 }
 
@@ -520,11 +520,11 @@ function usedByOthers(pantryId) {
 }
 
 // 쓴 개수에 맞춰 값을 다시 매긴다. used 가 바뀔 때마다 불러야 한다.
-function repricePantryLine(line, buyId = null) {
+function repricePantryLine(line) {
   const id = Math.trunc(Number(line?.pantry_id) || 0);
   const item = id > 0 ? pantry.items().find((p) => p.id === id) : null;
   if (!item) return line;
-  return { ...line, amount: pantryShare(item, { before: usedByOthers(id), used: line.used, buyId }) };
+  return { ...line, amount: pantryShare(item, { before: usedByOthers(id), used: line.used }) };
 }
 
 // 사 둔 것에서 꺼낸 줄. 이름·가격은 그 품목의 것이라 여기서 못 고치고, 몇 개 끝냈는지만 누른다.
@@ -533,12 +533,11 @@ function repricePantryLine(line, buyId = null) {
 function pantryItemRowHtml(line) {
   const qty = qtyOfPantry(line.pantry_id);
   const used = Math.max(0, Number(line.used) || 0);
-  const legacy = (pantry.items().find((p) => p.id === line.pantry_id)?.charged_buy_id ?? null) !== null;
   return `
     <div class="row pantry-line" data-pantry="${line.pantry_id}" data-used="${used}"
          data-name="${escapeHtml(line.name ?? '')}" data-amount="${Number(line.amount) || 0}">
       <span class="nm">${escapeHtml(line.name ?? '')}</span>
-      <span class="pr">${line.amount ? `${formatWon(line.amount)}원` : (legacy ? '이미 냄' : '0원')}</span>
+      <span class="pr">${formatWon(Number(line.amount) || 0)}원</span>
       <button type="button" class="chip mini${used ? ' selected' : ''}" data-act="toggle-done">${escapeHtml(pantryUsedLabel(used, qty))}</button>
       <button type="button" class="icon-btn" data-act="del-item" aria-label="이 품목 빼기">✕</button>
     </div>`;
@@ -574,12 +573,9 @@ function readItemRow(row) {
   const id = Number(row.dataset.pantry);
   const used = Math.max(0, Number(row.dataset.used) || 0);
   const item = pantry.items().find((p) => p.id === id);
-  const s = state.sets.find((x) => x.key === state.openKey);
   return {
     name: row.dataset.name,
-    amount: item
-      ? pantryShare(item, { before: usedByOthers(id), used, buyId: s?.id ?? null })
-      : Number(row.dataset.amount) || 0,
+    amount: item ? pantryShare(item, { before: usedByOthers(id), used }) : Number(row.dataset.amount) || 0,
     pantry_id: id,
     used,
   };
@@ -618,10 +614,7 @@ function onSetsClick(e) {
     const rows = [...e.target.closest('.set-items').children];
     const i = rows.indexOf(e.target.closest('.row'));
     const line = s.lines[i];
-    s.lines[i] = repricePantryLine(
-      { ...line, used: pantryNextUsed(line.used, qtyOfPantry(line.pantry_id)) },
-      s.id ?? null,
-    );
+    s.lines[i] = repricePantryLine({ ...line, used: pantryNextUsed(line.used, qtyOfPantry(line.pantry_id)) });
     haptic();
     renderSets();
     return;
@@ -659,7 +652,7 @@ function onSetsChange(e) {
   const item = pantry.items().find((p) => p.id === id);
   if (!s || !item) return;
   commitOpenSet();
-  s.lines = [...cleanLines(s.lines), pantryLine(item, s.id)];
+  s.lines = [...cleanLines(s.lines), pantryLine(item)];
   haptic();
   renderSets();
 }

@@ -99,7 +99,7 @@ export async function load() {
       fetchCategories(),
       sb
         .from('pantry_items')
-        .select('id,how_id,name,amount,bought_on,charged_buy_id,done,qty,left_qty')
+        .select('id,how_id,name,amount,bought_on,charged_buy_id,transaction_id,done,qty,left_qty')
         // 남은 것은 전부, 다 쓴 것은 최근 두 달치만 (목록이 끝없이 길어지지 않게).
         .or(`done.eq.false,bought_on.gte.${shiftDay(todayLocal(), -60)}`)
         .order('bought_on', { ascending: false })
@@ -159,8 +159,8 @@ function render() {
 
   const stats = pantryStats(state.items);
   animateNumber(el.left, stats.units, (n) => `${n}개`);
-  el.waiting.hidden = !stats.waiting;
-  el.waiting.textContent = `${formatWon(stats.waiting)}원은 식비에서 처음 꺼내 먹을 때 가계부에 들어가요`;
+  el.waiting.hidden = !stats.leftValue;
+  el.waiting.textContent = `아직 ${formatWon(stats.leftValue)}원어치가 남았어요 (돈은 살 때 이미 냈어요)`;
   el.doneToggle.hidden = !stats.done;
   el.doneToggle.textContent = state.showDone ? '다 쓴 것 숨기기' : `다 쓴 것 ${stats.done}개 보기`;
 
@@ -247,7 +247,7 @@ function openSheetFor(item) {
   state.howId = item?.how_id ?? pantryHows()[0]?.id ?? null;
   el.date.value = item?.bought_on ?? todayLocal();
   el.del.hidden = !item;
-  el.charged.hidden = !priceLocked(item);
+  el.charged.hidden = !item?.transaction_id;
   el.shotRow.hidden = !!item || !ocr.supported(); // 한 품목을 고칠 때는 스크린샷 읽기가 필요 없다
   el.shot.disabled = false;
   el.cam.disabled = false;
@@ -407,13 +407,12 @@ function fillRows(found) {
   updateSaveState();
 }
 
-// 이미 꺼내 쓴 것이 있으면 총액을 못 바꾼다. 쓴 만큼은 벌써 가계부에 들어가 있어서
-// 여기서 값을 바꾸면 지난 기록과 어긋난다. (charged_buy_id 는 옛 방식으로 전가를
-// 이미 낸 품목 표시다.)
-function priceLocked(item) {
-  if (!item) return false;
-  if (item.charged_buy_id) return true;
-  return pantryLeftOf(item) < Math.max(1, Math.trunc(Number(item.qty) || 1));
+// 가계부 메모: '컬리 · 즉석밥 외 2'
+function pantryMemo(rows) {
+  const how = catsOf('meal_how').find((c) => c.id === state.howId)?.name ?? '사 둔 것';
+  const names = rows.map((l) => l.name).filter(Boolean);
+  const tail = names.length > 1 ? `${names[0]} 외 ${names.length - 1}` : (names[0] ?? '');
+  return tail ? `${how} · ${tail}` : how;
 }
 
 async function save() {
@@ -427,21 +426,20 @@ async function save() {
       const patch = { how_id: state.howId, name: rows[0].name, bought_on: el.date.value, qty: rows[0].qty };
       // 개수를 줄이면 남은 개수도 그 안으로 (늘리면 늘어난 만큼 더 남는다)
       patch.left_qty = Math.max(0, Math.min(rows[0].qty, pantryLeftOf(item) + (rows[0].qty - Math.max(1, Number(item.qty) || 1))));
-      if (!priceLocked(item)) patch.amount = rows[0].amount;
+      // 값을 고치면 트리거가 가계부 금액도 같이 맞춘다.
+      patch.amount = rows[0].amount;
       unwrap(await sb.from('pantry_items').update(patch).eq('id', item.id));
     } else {
+      // 담는 순간 가계부에 지출 한 건으로 들어간다 (장 본 날 실제로 나간 돈).
       unwrap(
-        await sb.from('pantry_items').insert(
-          rows.map((l) => ({
+        await sb.rpc('add_pantry_items', {
+          p: {
             how_id: state.howId,
-            name: l.name,
-            amount: l.amount,
-            qty: l.qty,
-            left_qty: l.qty,
-            bought_on: el.date.value,
-            created_by: state.userId,
-          })),
-        ),
+            date: el.date.value,
+            memo: pantryMemo(rows),
+            rows: rows.map((l) => ({ name: l.name, amount: l.amount, qty: l.qty })),
+          },
+        }),
       );
     }
     haptic();
@@ -459,8 +457,8 @@ async function save() {
 async function remove() {
   const item = state.editing;
   if (!item) return;
-  const msg = item.charged_buy_id
-    ? '이 품목은 이미 가계부에 들어갔어요. 목록에서 빼도 가계부 금액은 그대로예요. 뺄까요?'
+  const msg = item.transaction_id
+    ? `이 품목을 빼면 가계부에서도 ${formatWon(Math.max(0, Number(item.amount) || 0))}원이 같이 줄어요. 뺄까요?`
     : '이 품목을 뺄까요?';
   if (!confirmDialog(msg)) return;
   try {
