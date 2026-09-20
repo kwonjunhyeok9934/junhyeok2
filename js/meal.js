@@ -271,12 +271,14 @@ function onWeekClick(e) {
 
 // ---- 입력 시트 ------------------------------------------------------------
 
-export function openNew() {
+// today 를 주면 무조건 오늘 날짜로 연다. 홈에서 부를 때 쓴다 — 식비 탭이 지난 주를
+// 보고 있더라도 홈의 ＋ 는 오늘을 적는 것이어야 한다.
+export function openNew({ today: forceToday = false } = {}) {
   const today = todayLocal();
   const days = weekDays(state.start);
-  const date = days.includes(today) ? today : state.start;
-  const from = date === today ? slotOfHour(new Date().getHours()) : 'breakfast';
-  openMealSheet(null, { date, slot: firstFreeSlot(date, from) });
+  const day = forceToday || days.includes(today) ? today : state.start;
+  const from = day === today ? slotOfHour(new Date().getHours()) : 'breakfast';
+  openMealSheet(null, { date: day, slot: firstFreeSlot(day, from) });
 }
 
 // from 부터 돌면서 비어 있는 첫 끼니. 다 차 있으면 from 그대로.

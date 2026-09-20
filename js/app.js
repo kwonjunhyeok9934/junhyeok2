@@ -328,7 +328,9 @@ function bindTabs() {
     else if (tab === 'meal') meal.openNew();
     else if (tab === 'pantry') pantry.openNew();
     else if (tab === 'trips' || tab === 'travel') trip.openNew();
-    else ledger.openNew(); // 홈·가계부는 지출 입력
+    // 홈에서 제일 자주 적는 것이 끼니다. 늘 오늘 날짜로 연다.
+    else if (tab === 'home') meal.openNew({ today: true });
+    else ledger.openNew(); // 가계부는 지출 입력
   });
 }
 
