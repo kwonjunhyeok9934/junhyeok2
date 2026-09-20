@@ -124,8 +124,12 @@ function bindLogin() {
     const btn = form.querySelector('button[type="submit"]');
     btn.disabled = true;
     try {
-      const session = await signIn($('#login-email').value.trim(), $('#login-password').value);
-      form.reset();
+      const email = $('#login-email').value.trim();
+      const password = $('#login-password').value;
+      const session = await signIn(email, password);
+      // 입력칸을 비우기 전에 저장을 부탁한다. 순서가 바뀌면 브라우저가
+      // 저장할 게 없다고 보고 '저장할까요?' 를 띄우지 않는다.
+      await saveCredential(email, password);
       enterMain(session.user);
     } catch (e2) {
       console.warn(e2);
@@ -135,6 +139,16 @@ function bindLogin() {
       btn.disabled = false;
     }
   });
+}
+
+// 다음에 올 때 한 번에 채워 넣도록 브라우저 비밀번호 관리자에 맡긴다.
+// 크롬 계열만 이 방법을 지원하고, 사파리·파이어폭스는 form 의 autocomplete
+// 속성을 보고 알아서 저장한다. 그래서 실패해도 그냥 넘어간다.
+async function saveCredential(email, password) {
+  try {
+    if (!window.PasswordCredential || !navigator.credentials?.store) return;
+    await navigator.credentials.store(new PasswordCredential({ id: email, password, name: email }));
+  } catch { /* 무시 */ }
 }
 
 // Supabase 오류 문구를 우리말로. 모르는 문구는 그대로 보여줘서 원인을 찾을 수 있게 한다.
@@ -182,6 +196,8 @@ function enterMain(user) {
 
 function leaveMain() {
   currentUser = null;
+  const pw = $('#login-password');
+  if (pw) pw.value = '';
   for (const ch of channels) sb.removeChannel(ch);
   channels = [];
   document.removeEventListener('visibilitychange', onVisible);
