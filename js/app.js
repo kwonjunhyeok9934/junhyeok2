@@ -14,7 +14,6 @@ import * as travel from './travel.js';
 import * as trip from './trip.js';
 import * as packing from './packing.js';
 
-const APP_VERSION = 'v34'; // sw.js 의 CACHE 버전과 맞춘다
 import { fetchCategories, renderCategoryManager } from './categories.js';
 
 const view = {
@@ -135,6 +134,26 @@ function watchForUpdate() {
     pending = false;
     location.reload();
   }
+}
+
+// 지금 돌고 있는 버전을 설정 맨 밑에 보여 준다.
+//
+// 예전에는 여기에 번호를 손으로 적어 두었는데, sw.js 의 CACHE 를 올리면서
+// 이쪽을 잊으면 '화면은 새 코드인데 번호는 옛것' 이 되었다. 실제로 그래서
+// 업데이트가 안 되는 줄 알고 한참을 헤맸다. 그래서 적어 두지 않고,
+// 지금 쓰고 있는 캐시 이름에서 직접 읽는다 — 틀릴 수가 없다.
+async function showVersion() {
+  const box = $('#app-version');
+  if (!box) return;
+  let label = '';
+  try {
+    const nums = (await caches.keys())
+      .map((k) => /^couple-v(\d+)$/.exec(k)?.[1])
+      .filter(Boolean)
+      .map(Number);
+    if (nums.length) label = ` v${Math.max(...nums)}`;
+  } catch { /* 캐시를 못 보는 환경이면 번호 없이 */ }
+  box.textContent = `우리집${label}`;
 }
 
 // 브라우저가 저장공간을 알아서 청소하면서 로그인이 풀리는 걸 막는다.
@@ -433,7 +452,7 @@ function bindTheme() {
 }
 
 function bindSettings() {
-  $('#app-version').textContent = `우리집 ${APP_VERSION}`;
+  showVersion();
   bindTheme();
   bindPush();
   $('#btn-settings').addEventListener('click', openSettings);
@@ -498,6 +517,7 @@ function bindPush() {
 
 async function openSettings() {
   view.settings.hidden = false;
+  showVersion();   // 처음 켠 직후에는 캐시가 아직 없을 수 있어 열 때마다 다시 본다
   renderPush();
   const { data } = await sb.from('profiles').select('name').eq('id', currentUser.id).maybeSingle();
   $('#my-name').value = data?.name ?? '';
