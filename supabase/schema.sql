@@ -1519,6 +1519,10 @@ begin
   raise notice '중복 카테고리 %개를 정리했습니다', n;
 end $$;
 
+-- 청소로 끝내면 언젠가 또 생긴다. 같은 칸(kind)에 같은 이름을 두 번 넣지 못하게
+-- 데이터베이스가 직접 막는다. 위에서 중복을 치운 뒤라 지금은 반드시 걸린다.
+create unique index if not exists categories_kind_name_idx on categories (kind, name);
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles

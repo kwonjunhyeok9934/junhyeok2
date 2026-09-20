@@ -403,11 +403,19 @@ const isBlankLine = (l) => !String(l?.name ?? '').trim() && !(Number(l?.amount) 
 
 function openSetHtml(s) {
   if (s.picking || !s.howId) {
+    const hows = catsOf('meal_how');
+    // 칩만 덩그러니 나오면 뭘 하라는 건지 알 수 없다. 한 줄 물어보고 시작한다.
     return `
       <div class="meal-set" data-key="${s.key}">
-        <div class="chips">
-          ${catsOf('meal_how').map((c) => `<button type="button" class="chip ${c.id === s.howId ? 'selected' : ''}" data-act="pick" data-id="${c.id}">${escapeHtml(c.name)}</button>`).join('')}
+        <div class="row">
+          <div class="field-label">어떻게 샀어요?</div>
+          <button type="button" class="icon-btn" data-act="del-set" aria-label="그만두기">✕</button>
         </div>
+        ${hows.length
+          ? `<div class="chips">
+          ${hows.map((c) => `<button type="button" class="chip ${c.id === s.howId ? 'selected' : ''}" data-act="pick" data-id="${c.id}">${escapeHtml(c.name)}</button>`).join('')}
+        </div>`
+          : '<p class="hint">설정 → 카테고리에서 \'식비 · 어떻게\' 를 먼저 만들어 주세요.</p>'}
       </div>`;
   }
   const how = nameOf(s.howId);

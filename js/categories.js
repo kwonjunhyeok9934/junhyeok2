@@ -16,6 +16,10 @@ export async function fetchCategories() {
 export async function addCategory(name, kind, list) {
   const clean = name.trim();
   if (!clean) return null;
+  // 같은 이름이 이미 있으면 새로 만들지 않고 그걸 돌려준다. 데이터베이스도 같은
+  // 칸에 같은 이름을 막고 있어서, 그냥 넣으면 오류만 나고 사용자는 영문을 모른다.
+  const same = list.find((c) => c.kind === kind && c.name === clean);
+  if (same) return same;
   const maxOrder = list
     .filter((c) => c.kind === kind)
     .reduce((m, c) => Math.max(m, c.sort_order), 0);

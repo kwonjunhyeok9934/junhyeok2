@@ -493,6 +493,7 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .meal-set input[readonly] { color: var(--muted); }
 .meal-set .row > input.price { flex: 0 0 96px; text-align: right; font-variant-numeric: tabular-nums; }
 .meal-set .set-sum { margin-left: auto; font-variant-numeric: tabular-nums; }
+.meal-set .row > .field-label { flex: 1; min-width: 0; margin-bottom: 0; }
 #meal-total { font-size: 13px; }
 
 /* 이름이 길어도 칸이 밖으로 밀려나지 않게 (할일·일정·고정비의 기존 seg 에도 적용된다) */
