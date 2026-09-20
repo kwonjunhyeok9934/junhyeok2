@@ -1462,19 +1462,13 @@ begin
       end if;
     end if;
 
-    -- 사 둔 것: 값이 실린 줄이 그 품목의 전가를 가져간다 (0원으로 붙은 줄은 안 가져간다).
-    update pantry_items p set charged_buy_id = v_buy
-      from jsonb_array_elements(v_lines) as e(line)
-     where p.id = nullif(line ->> 'pantry_id', '')::bigint
-       and coalesce((line ->> 'amount')::int, 0) > 0;
-
-    -- 이 세트에서 빠진 품목은 놓아 준다 — 다음에 꺼내 쓸 때 값이 다시 붙는다.
-    update pantry_items p set charged_buy_id = null
-     where p.charged_buy_id = v_buy
-       and not exists (
-         select 1 from jsonb_array_elements(v_lines) as e(line)
-          where nullif(line ->> 'pantry_id', '')::bigint = p.id
-            and coalesce((line ->> 'amount')::int, 0) > 0);
+    -- 예전에는 여기서 '전가를 가져간 세트'(charged_buy_id)를 잡아 두었다. 한 끼니가
+    -- 품목 값을 통째로 내고 나머지 끼니는 0원으로 붙는 방식이었다.
+    -- 이제는 쓴 개수만큼 나눠 내므로(4개에 10,000원이면 한 개에 2,500원) 전가를
+    -- 쥐는 세트가 없다. 값은 줄마다 js/calc.js 의 pantryShare 가 매긴다.
+    --
+    -- 칸은 남겨 둔다 — 옛 방식으로 이미 값을 낸 품목을 알아보는 표시로 쓴다.
+    -- 그 품목은 돈이 벌써 가계부에 들어가 있어서 다시 매기면 두 번 세게 된다.
 
     -- 이 세트가 건드린 품목만 개수를 다시 센다
     -- (목록에서 손으로 눌러 둔 다른 품목은 그대로 둔다).

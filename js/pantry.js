@@ -247,7 +247,7 @@ function openSheetFor(item) {
   state.howId = item?.how_id ?? pantryHows()[0]?.id ?? null;
   el.date.value = item?.bought_on ?? todayLocal();
   el.del.hidden = !item;
-  el.charged.hidden = !item?.charged_buy_id;
+  el.charged.hidden = !priceLocked(item);
   el.shotRow.hidden = !!item || !ocr.supported(); // 한 품목을 고칠 때는 스크린샷 읽기가 필요 없다
   el.shot.disabled = false;
   el.cam.disabled = false;
@@ -407,6 +407,15 @@ function fillRows(found) {
   updateSaveState();
 }
 
+// 이미 꺼내 쓴 것이 있으면 총액을 못 바꾼다. 쓴 만큼은 벌써 가계부에 들어가 있어서
+// 여기서 값을 바꾸면 지난 기록과 어긋난다. (charged_buy_id 는 옛 방식으로 전가를
+// 이미 낸 품목 표시다.)
+function priceLocked(item) {
+  if (!item) return false;
+  if (item.charged_buy_id) return true;
+  return pantryLeftOf(item) < Math.max(1, Math.trunc(Number(item.qty) || 1));
+}
+
 async function save() {
   const rows = readRows().filter((l) => l.name);
   if (!rows.length || !state.howId) return;
@@ -418,7 +427,7 @@ async function save() {
       const patch = { how_id: state.howId, name: rows[0].name, bought_on: el.date.value, qty: rows[0].qty };
       // 개수를 줄이면 남은 개수도 그 안으로 (늘리면 늘어난 만큼 더 남는다)
       patch.left_qty = Math.max(0, Math.min(rows[0].qty, pantryLeftOf(item) + (rows[0].qty - Math.max(1, Number(item.qty) || 1))));
-      if (!item.charged_buy_id) patch.amount = rows[0].amount;
+      if (!priceLocked(item)) patch.amount = rows[0].amount;
       unwrap(await sb.from('pantry_items').update(patch).eq('id', item.id));
     } else {
       unwrap(

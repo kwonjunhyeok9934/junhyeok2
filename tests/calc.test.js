@@ -10,6 +10,7 @@ import {
   buyTotal, buyAmount, mealAmount, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryPrice, pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
+  pantryShare, pantryUnitPrice,
   pantryUsedLabel, pantryNextUsed, pantryLeftOf,
   parseOrderText, guessOrderHow, guessOrderDate, unspace,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
@@ -386,7 +387,8 @@ test('resolveMealCategoryId: 연결된 거래의 분류를 유지한다', () => 
 });
 
 // ---- 사 둔 것 -----------------------------------------------------------------
-// 담을 때는 가계부에 안 들어가고, 처음 꺼내 먹을 때 한 번만 값이 실린다.
+// 담을 때는 가계부에 안 들어가고, 꺼내 쓴 개수만큼 그 끼니가 나눠 낸다.
+// (옛 방식으로 이미 전가를 낸 품목 — charged_buy_id 가 있는 것 — 은 그대로 둔다.)
 
 const pantry = [
   { id: 1, how_id: 10, name: '삼겹살 600g', amount: 12000, bought_on: '2026-09-07', charged_buy_id: null, done: false },
@@ -403,9 +405,34 @@ test('pantryPrice: 처음 꺼낼 때만 값이 실린다', () => {
   assert.equal(pantryPrice({ amount: -5 }), 0);
 });
 
-test('pantryLine: 세트에 붙일 품목 줄 (처음엔 0개 끝냄 = 남김)', () => {
-  assert.deepEqual(pantryLine(pantry[0]), { name: '삼겹살 600g', amount: 12000, pantry_id: 1, used: 0 });
+test('pantryLine: 세트에 붙일 품목 줄 (처음엔 0개 끝냄 = 남김이라 0원)', () => {
+  assert.deepEqual(pantryLine(pantry[0]), { name: '삼겹살 600g', amount: 0, pantry_id: 1, used: 0 });
   assert.deepEqual(pantryLine(pantry[1]), { name: '두부', amount: 0, pantry_id: 2, used: 0 });
+});
+
+test('pantryUnitPrice: 개당 얼마', () => {
+  assert.equal(pantryUnitPrice({ amount: 10000, qty: 4 }), 2500);
+  assert.equal(pantryUnitPrice({ amount: 10000, qty: 3 }), 3333);
+  assert.equal(pantryUnitPrice({ amount: 12000 }), 12000); // 개수가 없으면 한 개짜리
+});
+
+test('pantryShare: 쓴 개수만큼 나눠 내고, 다 쓰면 합이 전가와 같다', () => {
+  const four = { amount: 10000, qty: 4, charged_buy_id: null };
+  assert.equal(pantryShare(four, { before: 0, used: 0 }), 0);      // 남김이면 안 낸다
+  assert.equal(pantryShare(four, { before: 0, used: 1 }), 2500);
+  assert.equal(pantryShare(four, { before: 2, used: 2 }), 5000);   // 뒤쪽 두 개
+  assert.equal(pantryShare(four, { before: 0, used: 9 }), 10000);  // 넘겨 적어도 전가까지
+
+  // 나누어떨어지지 않으면 마지막 한 개가 잔돈을 가져간다.
+  const three = { amount: 10000, qty: 3, charged_buy_id: null };
+  const parts = [0, 1, 2].map((before) => pantryShare(three, { before, used: 1 }));
+  assert.deepEqual(parts, [3333, 3333, 3334]);
+  assert.equal(parts.reduce((a, b) => a + b, 0), 10000);
+
+  // 옛 방식으로 이미 전가를 낸 품목은 건드리지 않는다.
+  const old = { amount: 3000, qty: 4, charged_buy_id: 91 };
+  assert.equal(pantryShare(old, { before: 0, used: 1 }), 0);
+  assert.equal(pantryShare(old, { before: 0, used: 1, buyId: 91 }), 3000);
 });
 
 test('pantryUsedLabel / pantryNextUsed: 한 개짜리는 남김↔다 씀, 여러 개면 세어 간다', () => {
@@ -505,19 +532,21 @@ test('pantryStats: 남은 개수와 아직 가계부에 안 들어간 돈', () =
   assert.deepEqual(pantryStats([]), { left: 0, units: 0, done: 0, waiting: 0 });
 });
 
-test('planMealSave: 처음 쓴 품목만 가계부로 가고, 또 먹은 품목은 0원이라 거래가 없다', () => {
+test('planMealSave: 쓴 개수만큼만 가계부로 간다', () => {
+  const four = { id: 5, how_id: 10, name: '즉석밥', amount: 10000, qty: 4, left_qty: 4, charged_buy_id: null, done: false };
   const p = planMealSave(null, {
     ...base,
     buys: [
-      { id: null, howId: 10, lines: [pantryLine(pantry[0]), pantryLine(pantry[1])] }, // 12,000 + 0
-      { id: null, howId: 70, lines: [{ name: '두부', amount: 0, pantry_id: 2, used: 2 }] },
+      // 네 개에 10,000원짜리에서 한 개를 썼다 → 2,500원
+      { id: null, howId: 10, lines: [{ ...pantryLine(four), used: 1, amount: pantryShare(four, { used: 1 }) }] },
+      // 꺼내 놓기만 하고 안 쓴 것(남김)은 0원이라 거래를 만들지 않는다
+      { id: null, howId: 70, lines: [pantryLine(pantry[0])] },
     ],
   }, mealCats);
   assert.equal(p.buys[0].tx.op, 'insert');
-  assert.equal(p.buys[0].tx.payload.amount, 12000);        // 이미 낸 두부는 안 더한다
-  assert.deepEqual(p.buys[0].patch.lines[1], { name: '두부', amount: 0, pantry_id: 2, used: 0 });
-  assert.deepEqual(p.buys[1].tx, { op: 'none', id: null }); // 0원짜리 세트는 거래를 안 만든다
-  assert.equal(p.buys[1].patch.lines[0].used, 2);           // 몇 개 끝냈는지 그대로 실려 간다
+  assert.equal(p.buys[0].tx.payload.amount, 2500);
+  assert.equal(p.buys[0].patch.lines[0].used, 1);           // 몇 개 끝냈는지 그대로 실려 간다
+  assert.deepEqual(p.buys[1].tx, { op: 'none', id: null });
 });
 
 // ---- planMealSave -------------------------------------------------------------

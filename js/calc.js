@@ -501,11 +501,36 @@ export function pantryPrice(item, buyId = null) {
   return holder !== null && holder !== buyId ? 0 : price;
 }
 
-// 사 둔 것 하나를 세트의 품목 줄로. 처음에는 '남김'(0개 끝냄)으로 붙는다.
+// 개당 얼마인지 (보여 주기용). 4개에 10,000원이면 2,500원.
+export function pantryUnitPrice(item) {
+  const total = Math.max(0, Math.trunc(Number(item?.amount) || 0));
+  const qty = Math.max(1, Math.trunc(Number(item?.qty) || 1));
+  return Math.floor(total / qty);
+}
+
+// 이 끼니가 낼 돈. 쓴 개수만큼만 낸다.
+//   before = 이 끼니 앞에서 다른 끼니들이 이미 쓴 개수
+//   used   = 이 끼니에서 쓴 개수
+// 누적 지점끼리 빼는 방식이라, 다 쓰고 나면 조각들의 합이 정확히 전가가 된다.
+// (3개에 10,000원 → 3,333 / 3,333 / 3,334 — 마지막 한 개가 잔돈을 가져간다.)
+//
+// 옛 방식(전가 한 번)으로 이미 값이 실린 품목은 건드리지 않는다. 그 돈은 벌써
+// 가계부에 들어가 있어서, 여기서 또 매기면 같은 돈을 두 번 세게 된다.
+export function pantryShare(item, { before = 0, used = 0, buyId = null } = {}) {
+  if ((item?.charged_buy_id ?? null) !== null) return pantryPrice(item, buyId);
+  const total = Math.max(0, Math.trunc(Number(item?.amount) || 0));
+  const qty = Math.max(1, Math.trunc(Number(item?.qty) || 1));
+  const at = (n) => (n >= qty ? total : Math.floor((total * n) / qty));
+  const b = Math.min(qty, Math.max(0, Math.trunc(Number(before) || 0)));
+  const u = Math.min(qty - b, Math.max(0, Math.trunc(Number(used) || 0)));
+  return at(b + u) - at(b);
+}
+
+// 사 둔 것 하나를 세트의 품목 줄로. 처음에는 '남김'(0개 끝냄) — 아직 안 썼으니 0원이다.
 export function pantryLine(item, buyId = null) {
   return {
     name: String(item?.name ?? '').trim(),
-    amount: pantryPrice(item, buyId),
+    amount: pantryShare(item, { before: 0, used: 0, buyId }),
     pantry_id: item?.id,
     used: 0,
   };
@@ -536,12 +561,17 @@ export function pantryChoices(items, { howId = null, usedIds = [], buyId = null 
     .sort((a, b) => (a.bought_on < b.bought_on ? 1 : a.bought_on > b.bought_on ? -1 : (b.id ?? 0) - (a.id ?? 0)));
 }
 
-// '삼겹살 600g · 12,000원' / 이미 값을 낸 것은 '· 이미 냄' / 여러 개면 '· 2개 남음' 까지
+// '삼겹살 600g · 12,000원' / 여러 개면 '· 개당 2,500원 · 3개 남음'
+// 옛 방식으로 이미 값을 낸 것은 '· 이미 냄'.
 export function pantryOptionLabel(item, buyId = null) {
-  const price = pantryPrice(item, buyId);
-  const left = pantryLeftOf(item);
-  const tail = Math.max(1, Math.trunc(Number(item?.qty) || 1)) > 1 ? ` · ${left}개 남음` : '';
-  return `${String(item?.name ?? '').trim()} · ${price ? `${formatWon(price)}원` : '이미 냄'}${tail}`;
+  const name = String(item?.name ?? '').trim();
+  const qty = Math.max(1, Math.trunc(Number(item?.qty) || 1));
+  if ((item?.charged_buy_id ?? null) !== null && (item?.charged_buy_id ?? null) !== buyId) {
+    return `${name} · 이미 냄${qty > 1 ? ` · ${pantryLeftOf(item)}개 남음` : ''}`;
+  }
+  const total = Math.max(0, Math.trunc(Number(item?.amount) || 0));
+  if (qty <= 1) return `${name} · ${total ? `${formatWon(total)}원` : '값 없음'}`;
+  return `${name} · 개당 ${formatWon(pantryUnitPrice(item))}원 · ${pantryLeftOf(item)}개 남음`;
 }
 
 // 남은 개수. 예전에 담은 것(left_qty 가 없는 것)은 다 씀이면 0, 아니면 qty.
