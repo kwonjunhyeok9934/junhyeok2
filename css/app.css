@@ -290,6 +290,8 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .cat-kinds .chip { padding: 6px 12px; font-size: 13px; }
 .cat-item.editing { gap: 6px; }
 .cat-item.editing input { flex: 1; min-width: 0; }
+.cat-places { align-items: center; gap: 6px; padding: 0 0 8px; }
+.cat-places .hint { margin: 0 4px 0 0; }
 .cat-item.editing-row .name { color: var(--accent); font-weight: 600; }
 
 /* ---- 토스트 ---- */

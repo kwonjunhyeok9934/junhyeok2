@@ -6,7 +6,7 @@ import {
   groupByDate, formatWon, parseWon, dueLabel, sortTodos,
   calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
   dayName, dayLabel, weekStart, weekDays, weekLabel, slotOfHour, resolveMealCategoryId,
-  cleanLines, dropEmptyFee, howNeedsShop, howHasFee,
+  cleanLines, dropEmptyFee, howNeedsShop, howHasFee, howPlaces, howsForPlace,
   buyTotal, buyAmount, mealAmount, mealSpent, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
@@ -1070,4 +1070,28 @@ test('groupPacking: 기본 분류 순서 → 새 분류는 이름 순', () => {
 
 test('groupPacking: 비어 있으면 빈 목록', () => {
   assert.deepEqual(groupPacking([], ['의류']), []);
+});
+
+test('howsForPlace: 어디서마다 어떻게를 나눠 보여 준다', () => {
+  const HOME = 1, WORK = 2, OUT = 3;
+  const hows = [
+    { id: 10, name: '컬리', where_ids: [HOME] },
+    { id: 11, name: '포장', where_ids: [HOME, OUT] },
+    { id: 12, name: '회사', where_ids: [WORK] },
+    { id: 13, name: '외식', where_ids: [OUT] },
+    { id: 14, name: '새것', where_ids: null },      // 아직 안 나눈 것은 어디서든
+    { id: 15, name: '옛것', where_ids: [99] },      // 지워진 어디서만 적힌 것도 어디서든
+  ];
+  const placeIds = [HOME, WORK, OUT];
+  const names = (placeId, opts = {}) => howsForPlace(hows, placeId, { placeIds, ...opts }).map((c) => c.name);
+  assert.deepEqual(names(HOME), ['컬리', '포장', '새것', '옛것']);
+  assert.deepEqual(names(WORK), ['회사', '새것', '옛것']);
+  assert.deepEqual(names(OUT), ['포장', '외식', '새것', '옛것']);
+  // 이미 골라 둔 것은 다른 곳 것이어도 남는다
+  assert.deepEqual(names(WORK, { keepId: 10 }), ['컬리', '회사', '새것', '옛것']);
+  // 어디서를 안 골랐으면 전부
+  assert.equal(howsForPlace(hows, null).length, hows.length);
+  // 열이 아직 없을 때(schema.sql 안 돌림)도 전부 나온다
+  assert.equal(howsForPlace([{ id: 1, name: '컬리' }], HOME, { placeIds }).length, 1);
+  assert.deepEqual(howPlaces({ where_ids: ['1', 99] }, placeIds), [1]);
 });

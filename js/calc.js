@@ -241,6 +241,23 @@ export const FEE_LABEL = '배달료';
 export const howNeedsShop = (name) => HOW_NEEDS_SHOP.includes(String(name ?? '').trim());
 export const howHasFee = (name) => HOW_HAS_FEE.includes(String(name ?? '').trim());
 
+// '어떻게' 가 나올 '어디서' id 들. 지워진 어디서는 뺀다 (placeIds = 지금 있는 어디서 id 들).
+// 비어 있으면 어디서든 나온다.
+export function howPlaces(how, placeIds = null) {
+  const ids = Array.isArray(how?.where_ids) ? how.where_ids.map(Number) : [];
+  return placeIds ? ids.filter((id) => placeIds.includes(id)) : ids;
+}
+
+// 그 '어디서' 에서 고를 '어떻게' 들. keepId 는 이미 골라 둔 것 — 다른 곳 것이어도 보여 준다.
+export function howsForPlace(hows, placeId, { keepId = null, placeIds = null } = {}) {
+  if (placeId == null) return hows;
+  const pid = Number(placeId);
+  return hows.filter((c) => {
+    const ids = howPlaces(c, placeIds);
+    return !ids.length || ids.includes(pid) || c.id === keepId;
+  });
+}
+
 // 저장할 품목 줄. 값이 안 적힌 배달료 칸은 버린다 (기본으로 놓인 빈 칸이라).
 export function dropEmptyFee(lines) {
   return (lines ?? []).filter((l) => !(String(l?.name ?? '').trim() === FEE_LABEL && !Number(l?.amount)));
