@@ -290,6 +290,8 @@ export function cleanLines(lines) {
         out.used = l?.used === undefined
           ? (l?.done === true ? 1 : 0)
           : Math.max(0, Math.trunc(Number(l.used) || 0));
+        // 먹긴 했는데 남았다('남김'). 한 개짜리에만 있다 — 개수는 안 줄고 값은 들어간다.
+        if (l?.part === true && out.used === 0) out.part = true;
       }
       return out;
     })
@@ -356,7 +358,7 @@ export function mealBuyMemo({ slot, menu, how, shop, lines }) {
 
 // 세트의 품목을 한 줄씩. 이름과 가격을 따로 줘서 화면에서 가격 열을 맞출 수 있게 한다.
 // [{ name: '참치', price: '300원' }, { name: '고추장', price: '4,500원' }]
-// 값이 안 실린 사 둔 것 줄은 가격 자리에 '안 씀'/'2개 씀'/'다 씀' 이 들어간다 —
+// 값이 안 실린 사 둔 것 줄은 가격 자리에 '안 씀'/'남김'/'2개 씀'/'다 씀' 이 들어간다 —
 // 열을 하나 더 두면 모든 줄에서 폭을 뺏어 품목 이름이 잘린다.
 // qtyOf(pantry_id) 로 그 품목을 몇 개 샀는지 알려 주면 '다 씀' 까지 가려 준다.
 export function buyItemTexts(lines, qtyOf = () => 1) {
@@ -365,7 +367,7 @@ export function buyItemTexts(lines, qtyOf = () => 1) {
     price: l.amount
       ? `${formatWon(l.amount)}원`
       : l.pantry_id
-        ? pantryUsedLabel(l.used, qtyOf(l.pantry_id))
+        ? pantryUsedLabel(l.used, qtyOf(l.pantry_id), l.part)
         : '',
   }));
 }
@@ -541,20 +543,45 @@ export function pantryLine(item) {
 
 // 이 끼니에서 몇 개를 먹었는지 보여 주는 말.
 // 예전에는 '남김' 이라고 했는데, 0개를 먹었다는 뜻인지 남은 게 있다는 뜻인지
-// 읽는 사람마다 달라서 '안 씀' 으로 바꿨다.
-export function pantryUsedLabel(used, qty = 1) {
+// 읽는 사람마다 달라서 '안 씀' 으로 바꿨다. 지금의 '남김' 은 **먹긴 했는데 남았다**는
+// 뜻 하나다 (part — 과자 한 봉지를 뜯어 반만 먹은 것).
+export function pantryUsedLabel(used, qty = 1, part = false) {
   const n = Math.max(0, Math.trunc(Number(used) || 0));
   const total = Math.max(1, Math.trunc(Number(qty) || 1));
-  if (n <= 0) return '안 씀';
+  if (n <= 0) return part ? '남김' : '안 씀';
   if (n >= total) return '다 씀';
   return `${n}개 씀`;
 }
 
-// 버튼을 누를 때 다음 개수. 0 → 1 → … → qty → 0 으로 돈다.
-export function pantryNextUsed(used, qty = 1) {
+// 버튼을 누를 때 다음 상태 { used, part }.
+// 여러 개짜리는 0 → 1 → … → qty → 0 으로 돈다.
+// 한 개짜리는 안 씀과 다 씀 사이에 '남김' 이 하나 더 있다: 다 씀 → 남김 → 안 씀 → 다 씀.
+// (꺼내 오면 다 씀으로 시작하니, 한 번 누르면 남김이다.)
+// 예전에는 한 개짜리가 다 씀 ↔ 안 씀 뿐이라, 과자 하나를 뜯어 조금 남겨도
+// '안 씀'(값이 안 들어감) 아니면 '다 씀'(목록에서 사라짐) 중에 골라야 했다.
+export function pantryNext({ used = 0, part = false } = {}, qty = 1) {
   const total = Math.max(1, Math.trunc(Number(qty) || 1));
   const n = Math.max(0, Math.trunc(Number(used) || 0));
-  return n >= total ? 0 : n + 1;
+  if (total === 1) {
+    if (n >= 1) return { used: 0, part: true };
+    if (part) return { used: 0, part: false };
+    return { used: 1, part: false };
+  }
+  return { used: n >= total ? 0 : n + 1, part: false };
+}
+
+// 사 둔 것 줄 하나가 낼 몫.
+//   used, part            = 이 줄 (몇 개 끝냈나, 먹다 남겼나)
+//   othersUsed, othersPart = 다른 끼니들이 끝낸 개수, 남김으로 둔 줄 수
+// '남김' 도 먹은 것이라 값이 들어간다 — 뜯은 한 개의 값을 **처음 뜯은 끼니**가 낸다.
+// 그래서 남김 줄은 한 개를 쓴 것처럼 세고, 이미 누가 뜯어 둔 것을 마저 먹는 끼니는
+// 그 한 개를 또 내지 않는다 (과자 1,500원: 남김 1,500 → 다 씀 0 → 합 1,500).
+export function pantryLineShare(item, { used = 0, part = false, othersUsed = 0, othersPart = 0 } = {}) {
+  const qty = Math.max(1, Math.trunc(Number(item?.qty) || 1));
+  const n = Math.max(0, Math.trunc(Number(used) || 0));
+  const on = Math.max(0, Math.trunc(Number(othersUsed) || 0));
+  const before = Math.min(qty, on + (Number(othersPart) > 0 ? 1 : 0));
+  return pantryShare(item, { before, used: n + (part && n === 0 ? 1 : 0) });
 }
 
 // 드롭다운에 올릴 것: 그 카테고리에서 아직 안 끝난 품목 중 이 끼니가 아직 안 쓴 것. 최근에 산 것부터.
@@ -571,6 +598,8 @@ export function pantryOptionLabel(item) {
   const name = String(item?.name ?? '').trim();
   const qty = Math.max(1, Math.trunc(Number(item?.qty) || 1));
   const total = Math.max(0, Math.trunc(Number(item?.amount) || 0));
+  // 먹다 남긴 것은 값이 이미 그 끼니에 들어갔다 — 마저 먹어도 0원이라 값을 띄우면 헷갈린다.
+  if (qty <= 1 && Number(item?.part_count) > 0) return `${name} · 먹다 남김`;
   if (qty <= 1) return `${name} · ${total ? `${formatWon(total)}원` : '값 없음'}`;
   return `${name} · 개당 ${formatWon(pantryUnitPrice(item))}원 · ${pantryLeftOf(item)}개 남음`;
 }
@@ -615,7 +644,7 @@ export function groupPantryByHow(items, cats) {
   return [...groups.values()].sort((a, b) => a.at - b.at || (a.id ?? 0) - (b.id ?? 0));
 }
 
-// { left: 남은 품목 줄 수, units: 남은 낱개 수, done: 다 쓴 줄 수, waiting: 아직 가계부에 안 들어간 돈 }
+// { left: 남은 품목 줄 수, units: 남은 낱개 수, done: 다 쓴 줄 수, leftValue: 아직 안 먹고 남은 값어치 }
 export function pantryStats(items) {
   let left = 0;
   let units = 0;
@@ -630,7 +659,9 @@ export function pantryStats(items) {
     const n = pantryLeftOf(it);
     units += n;
     // 아직 안 먹고 남은 값어치. 돈은 살 때 이미 냈으니 '앞으로 나갈 돈' 이 아니다.
-    leftValue += pantryShare(it, { before: Math.max(1, Math.trunc(Number(it.qty) || 1)) - n, used: n });
+    // 먹다 남긴 것(part_count)은 그 값이 이미 그 끼니에 들어갔으니 뺀다.
+    const fresh = Math.max(0, n - (Number(it.part_count) > 0 ? 1 : 0));
+    leftValue += pantryShare(it, { before: Math.max(1, Math.trunc(Number(it.qty) || 1)) - fresh, used: fresh });
   }
   return { left, units, done, leftValue };
 }

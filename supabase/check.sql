@@ -18,6 +18,9 @@ union all select '표 pantry_items',    case when to_regclass('public.pantry_ite
 union all select '열 pantry_items.qty',
        case when exists (select 1 from information_schema.columns
                           where table_name = 'pantry_items' and column_name = 'qty') then '있음' else '없음' end
+union all select '열 pantry_items.part_count',
+       case when exists (select 1 from information_schema.columns
+                          where table_name = 'pantry_items' and column_name = 'part_count') then '있음' else '없음' end
 union all select '함수 pantry_left',
        case when exists (select 1 from pg_proc where proname = 'pantry_left') then '있음' else '없음' end
 union all select '함수 notify_webhook',
