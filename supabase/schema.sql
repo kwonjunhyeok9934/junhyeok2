@@ -1679,6 +1679,37 @@ create trigger meal_buys_pantry_parts
   after insert or update of lines or delete on meal_buys
   for each row execute function meal_buy_pantry_parts();
 
+-- 45. 식비: '어떻게' 를 '어디서' 마다 나눠 보기 -------------------------------------
+-- '산 곳 추가' 에 어떻게가 전부 나와서 고를 게 너무 많았다. 어떻게마다 어느 어디서에 나올지를
+-- 적어 둔다 (where_ids = meal_where 카테고리 id 들). 포장처럼 집·외식 둘 다에 나올 수도 있다.
+-- 비어 있거나 null 이면 어디서든 나온다.
+
+alter table categories add column if not exists where_ids bigint[];
+
+-- 처음 한 번만: 없는 이름을 채우고, 부부가 정한 대로 나누고 순서를 맞춘다.
+-- (어떻게 중 하나라도 where_ids 가 적혀 있으면 이미 돌린 것이다 — 다시 돌려도 고친 것을 덮지 않는다.)
+insert into categories (name, kind, sort_order)
+select v.name, 'meal_how', v.sort_order
+from (values ('윙잇', 20), ('네이버', 30), ('편의점', 70), ('회사', 80)) as v(name, sort_order)
+where not exists (select 1 from categories c where c.kind = 'meal_how' and c.name = v.name)
+  and not exists (select 1 from categories c where c.kind = 'meal_how' and c.where_ids is not null);
+
+update categories c
+   set where_ids = coalesce((
+         select array_agg(w.id order by w.sort_order, w.id)
+           from categories w
+          where w.kind = 'meal_where'
+            and w.name = any (case c.name
+                  when '회사' then array['회사']
+                  when '외식' then array['외식']
+                  when '포장' then array['집', '외식']
+                  else array['집'] end)
+       ), '{}'),
+       sort_order = coalesce(
+         array_position(array['컬리', '윙잇', '네이버', '배달', '포장', '마트', '편의점', '회사', '외식'], c.name) * 10,
+         100 + c.sort_order)
+ where c.kind = 'meal_how' and c.where_ids is null;
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles

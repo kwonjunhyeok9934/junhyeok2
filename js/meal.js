@@ -12,13 +12,13 @@ import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirm
 import {
   todayLocal, shiftDay, formatWon, dayName,
   MEAL_SLOTS, SLOT_LABEL, weekStart, weekDays, weekLabel, slotOfHour,
-  cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL,
+  cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL, DISCOUNT_LABEL, howPlaces, howsForPlace,
   buyTotal, buyAmount, mealAmount, mealSpent, sortMealBuys, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, pantryUsedLabel, pantryNext,
   pantryLineShare, pantryLeftOf,
 } from './calc.js';
-import { fetchCategories, addCategory } from './categories.js';
+import { fetchCategories, addCategory, setCategoryPlaces } from './categories.js';
 import * as pantry from './pantry.js';
 import { itemRowHtml, growItemRows, readFreeRow, onItemRowsKeydown } from './itemrow.js';
 
@@ -357,6 +357,13 @@ function onPlaceClick(e) {
   state.placeId = Number(chip.dataset.id);
   renderPlaces();
   applyAutoMenu();
+  renderPickingSet();
+}
+
+// '어떻게 샀어요?' 칩은 어디서마다 다르다. 고르는 중인 세트가 펼쳐져 있으면 새 어디서에 맞춰 다시 그린다.
+function renderPickingSet() {
+  const open = state.sets.find((x) => x.key === state.openKey);
+  if (open && (open.picking || !open.howId)) renderSets();
 }
 
 // 메뉴가 뻔한 장소. 여기에 적어 두면 장소를 고를 때 메뉴가 저절로 들어간다.
@@ -380,7 +387,11 @@ async function createHow(key) {
   const name = input?.value ?? '';
   if (!s || !name.trim()) return;
   try {
-    const created = await addCategory(name, 'meal_how', state.cats);
+    // 지금 고른 어디서에 나오게 만든다. 다른 어디서에 이미 있는 이름이면 여기에도 나오게 붙인다.
+    const pid = state.placeId;
+    const created = await addCategory(name, 'meal_how', state.cats, pid ? { where_ids: [pid] } : {});
+    const places = howPlaces(created);
+    if (pid && places.length && !places.includes(pid)) await setCategoryPlaces(created.id, [...places, pid]);
     state.cats = await fetchCategories();
     s.howId = created.id;
     s.picking = false;
@@ -403,6 +414,7 @@ async function createPlace() {
     el.newPlaceRow.hidden = true;
     renderPlaces();
     applyAutoMenu();
+    renderPickingSet();
   } catch (err) {
     console.error(err);
     toast('장소를 추가하지 못했어요');
@@ -441,7 +453,11 @@ const isBlankLine = (l) => !String(l?.name ?? '').trim() && !(Number(l?.amount) 
 
 function openSetHtml(s) {
   if (s.picking || !s.howId) {
-    const hows = catsOf('meal_how');
+    // 고른 어디서에 넣어 둔 것만 (설정 → 카테고리 → 어떻게 에서 나눈다).
+    const hows = howsForPlace(catsOf('meal_how'), state.placeId, {
+      keepId: s.howId,
+      placeIds: catsOf('meal_where').map((c) => c.id),
+    });
     // 칩만 덩그러니 나오면 뭘 하라는 건지 알 수 없다. 한 줄 물어보고 시작한다.
     return `
       <div class="meal-set" data-key="${s.key}">
@@ -463,9 +479,11 @@ function openSetHtml(s) {
   }
   const how = nameOf(s.howId);
   const fee = howHasFee(how) ? (s.lines.find((l) => l.name === FEE_LABEL) ?? { name: FEE_LABEL, amount: 0 }) : null;
+  // 할인은 배달료 바로 위. 칸에는 양수로 보여 주고, 뺄 값으로 세는 건 cleanLines 가 한다.
+  const disc = fee ? (s.lines.find((l) => l.name === DISCOUNT_LABEL) ?? { name: DISCOUNT_LABEL, amount: 0 }) : null;
   // commitOpenSet 이 DOM 에서 읽어 온 줄에는 맨 끝 빈 줄도 섞여 있다. 여기서 걸러 내지 않으면
   // 다시 그릴 때마다 빈 줄이 하나씩 쌓인다 (남김↔다 씀 을 누를 때마다 늘어났다).
-  const items = s.lines.filter((l) => l.name !== FEE_LABEL && !isBlankLine(l));
+  const items = s.lines.filter((l) => l.name !== FEE_LABEL && !(disc && l.name === DISCOUNT_LABEL) && !isBlankLine(l));
   const rows = [...items, { name: '', amount: 0 }]; // 맨 끝에는 항상 빈 줄
   return `
     <div class="meal-set" data-key="${s.key}">
@@ -479,6 +497,7 @@ function openSetHtml(s) {
         : ''}
       <div class="set-items">
         ${rows.map((l, k) => setRowHtml(l, { last: k === rows.length - 1 })).join('')}
+        ${disc ? setRowHtml({ ...disc, amount: Math.abs(Number(disc.amount) || 0) }, { last: true, fixed: true }) : ''}
         ${fee ? setRowHtml(fee, { last: true, fixed: true }) : ''}
       </div>
       ${pantrySelectHtml(s)}
