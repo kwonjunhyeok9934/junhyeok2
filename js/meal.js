@@ -12,7 +12,7 @@ import { $, escapeHtml, openSheet, closeSheet, bindSheetBackdrop, toast, confirm
 import {
   todayLocal, shiftDay, formatWon, dayName,
   MEAL_SLOTS, SLOT_LABEL, weekStart, weekDays, weekLabel, slotOfHour,
-  cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL, howPlaces, howsForPlace,
+  cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL, DISCOUNT_LABEL, howPlaces, howsForPlace,
   buyTotal, buyAmount, mealAmount, mealSpent, sortMealBuys, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, pantryUsedLabel, pantryNext,
@@ -479,9 +479,11 @@ function openSetHtml(s) {
   }
   const how = nameOf(s.howId);
   const fee = howHasFee(how) ? (s.lines.find((l) => l.name === FEE_LABEL) ?? { name: FEE_LABEL, amount: 0 }) : null;
+  // 할인은 배달료 바로 위. 칸에는 양수로 보여 주고, 뺄 값으로 세는 건 cleanLines 가 한다.
+  const disc = fee ? (s.lines.find((l) => l.name === DISCOUNT_LABEL) ?? { name: DISCOUNT_LABEL, amount: 0 }) : null;
   // commitOpenSet 이 DOM 에서 읽어 온 줄에는 맨 끝 빈 줄도 섞여 있다. 여기서 걸러 내지 않으면
   // 다시 그릴 때마다 빈 줄이 하나씩 쌓인다 (남김↔다 씀 을 누를 때마다 늘어났다).
-  const items = s.lines.filter((l) => l.name !== FEE_LABEL && !isBlankLine(l));
+  const items = s.lines.filter((l) => l.name !== FEE_LABEL && !(disc && l.name === DISCOUNT_LABEL) && !isBlankLine(l));
   const rows = [...items, { name: '', amount: 0 }]; // 맨 끝에는 항상 빈 줄
   return `
     <div class="meal-set" data-key="${s.key}">
@@ -495,6 +497,7 @@ function openSetHtml(s) {
         : ''}
       <div class="set-items">
         ${rows.map((l, k) => setRowHtml(l, { last: k === rows.length - 1 })).join('')}
+        ${disc ? setRowHtml({ ...disc, amount: Math.abs(Number(disc.amount) || 0) }, { last: true, fixed: true }) : ''}
         ${fee ? setRowHtml(fee, { last: true, fixed: true }) : ''}
       </div>
       ${pantrySelectHtml(s)}

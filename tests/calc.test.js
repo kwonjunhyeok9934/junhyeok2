@@ -6,7 +6,7 @@ import {
   groupByDate, formatWon, parseWon, dueLabel, sortTodos,
   calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
   dayName, dayLabel, weekStart, weekDays, weekLabel, slotOfHour, resolveMealCategoryId,
-  cleanLines, dropEmptyFee, howNeedsShop, howHasFee, howPlaces, howsForPlace,
+  cleanLines, dropEmptyFee, howNeedsShop, howHasFee, howPlaces, howsForPlace, DISCOUNT_LABEL,
   buyTotal, buyAmount, mealAmount, mealSpent, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
@@ -1094,4 +1094,19 @@ test('howsForPlace: 어디서마다 어떻게를 나눠 보여 준다', () => {
   // 열이 아직 없을 때(schema.sql 안 돌림)도 전부 나온다
   assert.equal(howsForPlace([{ id: 1, name: '컬리' }], HOME, { placeIds }).length, 1);
   assert.deepEqual(howPlaces({ where_ids: ['1', 99] }, placeIds), [1]);
+});
+
+test('배달 할인: 적은 만큼 빼고, 빈 칸은 버리고, 0 아래로는 안 간다', () => {
+  const lines = [{ name: '치킨', amount: 20000 }, { name: DISCOUNT_LABEL, amount: 3000 }, { name: '배달료', amount: 2000 }];
+  assert.deepEqual(cleanLines(lines).map((l) => l.amount), [20000, -3000, 2000]);
+  assert.equal(buyTotal({ lines }), 19000);
+  // 음수로 적혀 있어도(저장된 줄) 같은 값
+  assert.equal(buyTotal({ lines: cleanLines(lines) }), 19000);
+  // 값 없는 할인 칸은 저장하지 않는다
+  assert.deepEqual(dropEmptyFee([{ name: '치킨', amount: 20000 }, { name: DISCOUNT_LABEL, amount: 0 }]), [{ name: '치킨', amount: 20000 }]);
+  assert.equal(buyTotal({ lines: [{ name: '김밥', amount: 2000 }, { name: DISCOUNT_LABEL, amount: 5000 }] }), 0);
+  // 가계부 거래 금액에도 할인이 빠진다
+  const cats = [{ id: 1, name: '식비', kind: 'expense' }, { id: 9, name: '배달', kind: 'meal_how' }];
+  const plan = planMealSave(null, { date: '2026-09-24', slot: 'dinner', menu: '치킨', buys: [{ howId: 9, lines }] }, cats);
+  assert.equal(plan.buys[0].tx.payload.amount, 19000);
 });
