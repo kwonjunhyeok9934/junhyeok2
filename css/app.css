@@ -284,6 +284,13 @@ main { padding: 6px 16px calc(var(--tabbar-h) + 90px); }
 .cat-item .name { flex: 1; cursor: pointer; font-weight: 500; }
 .cat-item .icon-btn { font-size: 14px; padding: 6px 8px; }
 .cat-item .icon-btn.del { color: var(--danger); }
+/* 설정의 칸 고르기. 다섯 칸이 폰 한 줄에 들어가야 해서 조금 작게 */
+.settings-tabs .subtab { font-size: 13px; padding: 8px 2px; white-space: nowrap; }
+.cat-kinds { margin-bottom: 6px; }
+.cat-kinds .chip { padding: 6px 12px; font-size: 13px; }
+.cat-item.editing { gap: 6px; }
+.cat-item.editing input { flex: 1; min-width: 0; }
+.cat-item.editing-row .name { color: var(--accent); font-weight: 600; }
 
 /* ---- 토스트 ---- */
 #toast {
