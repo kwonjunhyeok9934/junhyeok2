@@ -11,7 +11,7 @@ import {
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
   pantryShare, pantryUnitPrice,
-  pantryUsedLabel, pantryNextUsed, pantryLeftOf,
+  pantryUsedLabel, pantryNext, pantryLineShare, pantryLeftOf,
   parseOrderText, guessOrderHow, guessOrderDate, unspace,
   visitedStats, dayDiff, tripNights, tripLabel, tripStatus, sortTrips, tripsByRegion,
   nextTripName, tripDates, groupPlansByDate, splitPrep, sumPlans, sumCosts, groupPacking,
@@ -446,15 +446,38 @@ test('pantryShare: 쓴 개수만큼 나누고, 다 쓰면 합이 산 값과 같�
   assert.equal(parts.reduce((a, b) => a + b, 0), 10000);
 });
 
-test('pantryUsedLabel / pantryNextUsed: 한 개짜리는 안 씀↔다 씀, 여러 개면 세어 간다', () => {
+test('pantryUsedLabel / pantryNext: 한 개짜리는 다 씀 → 남김 → 안 씀, 여러 개면 세어 간다', () => {
   assert.equal(pantryUsedLabel(0, 1), '안 씀');
   assert.equal(pantryUsedLabel(1, 1), '다 씀');
   assert.equal(pantryUsedLabel(1, 3), '1개 씀');
   assert.equal(pantryUsedLabel(2, 3), '2개 씀');
   assert.equal(pantryUsedLabel(3, 3), '다 씀');
   assert.equal(pantryUsedLabel(9, 3), '다 씀'); // 넘겨 적어도 다 씀
-  assert.deepEqual([0, 1].map((n) => pantryNextUsed(n, 1)), [1, 0]);
-  assert.deepEqual([0, 1, 2, 3].map((n) => pantryNextUsed(n, 3)), [1, 2, 3, 0]);
+  assert.equal(pantryUsedLabel(0, 1, true), '남김');   // 먹긴 했는데 남았다
+  assert.equal(pantryUsedLabel(0, 3, true), '남김');
+  assert.equal(pantryUsedLabel(1, 1, true), '다 씀');   // 다 먹었으면 남김은 의미 없다
+
+  // 한 개짜리: 꺼내 오면 다 씀 → 남김 → 안 씀 → 다 씀
+  const one = [{ used: 1, part: false }];
+  for (let k = 0; k < 3; k++) one.push(pantryNext(one.at(-1), 1));
+  assert.deepEqual(one, [
+    { used: 1, part: false }, { used: 0, part: true }, { used: 0, part: false }, { used: 1, part: false },
+  ]);
+  // 여러 개면 예전 그대로 개수만 돈다 (남김은 안 끼어든다)
+  assert.deepEqual([0, 1, 2, 3].map((used) => pantryNext({ used }, 3).used), [1, 2, 3, 0]);
+  assert.deepEqual([0, 1, 2, 3].map((used) => pantryNext({ used }, 3).part), [false, false, false, false]);
+  assert.deepEqual(pantryNext(undefined, 1), { used: 1, part: false });
+});
+
+test('pantryLineShare: 한 개짜리 남김도 값이 들어가고, 마저 먹는 끼니는 또 안 낸다', () => {
+  const snack = { amount: 1500, qty: 1 };
+  assert.equal(pantryLineShare(snack, { part: true }), 1500);                    // 뜯어서 조금 먹음
+  assert.equal(pantryLineShare(snack, { used: 1, othersPart: 1 }), 0);           // 남은 걸 마저 먹음
+  assert.equal(pantryLineShare(snack, { part: true, othersPart: 1 }), 0);        // 또 조금 먹고 또 남김
+  assert.equal(pantryLineShare(snack, { used: 1 }), 1500);                       // 한 번에 다 먹음
+  assert.equal(pantryLineShare(snack, {}), 0);                                   // 안 씀
+  // 여러 개짜리는 예전과 같다 (4개에 10,000원, 다른 끼니가 1개 먹음 → 이번에 2개)
+  assert.equal(pantryLineShare({ amount: 10000, qty: 4 }, { used: 2, othersUsed: 1 }), 5000);
 });
 
 test('pantryLeftOf: 남은 개수 (예전에 담은 것은 다 씀 여부로 본다)', () => {
@@ -498,12 +521,18 @@ test('cleanLines: 사 둔 것 꼬리표는 지키고, 직접 적은 줄은 두 �
       { name: '소금', amount: 1000 },
       { name: '두부', amount: 0, pantry_id: 2 },
       { name: '비엔나', amount: 0, pantry_id: 3, done: true },   // 예전 줄: '다 씀' = 한 개 썼다
+      { name: '과자', amount: 1500, pantry_id: 5, used: 0, part: true },  // 남김
+      { name: '소금', amount: 1000, part: true },                          // 직접 적은 줄엔 안 붙는다
+      { name: '김', amount: 0, pantry_id: 6, used: 1, part: true },       // 다 먹었으면 남김은 떨어진다
     ]),
     [
       { name: '삼겹살 600g', amount: 12000, pantry_id: 1, used: 2 },
       { name: '소금', amount: 1000 },
       { name: '두부', amount: 0, pantry_id: 2, used: 0 },
       { name: '비엔나', amount: 0, pantry_id: 3, used: 1 },
+      { name: '과자', amount: 1500, pantry_id: 5, used: 0, part: true },
+      { name: '소금', amount: 1000 },
+      { name: '김', amount: 0, pantry_id: 6, used: 1 },
     ],
   );
 });
@@ -517,6 +546,7 @@ test('buyItemTexts: 값이 없는 줄은 가격 자리에 안 씀/개수/다 씀
       { name: '콩나물', amount: 0, pantry_id: 3, used: 0 },
       { name: '비엔나', amount: 0, pantry_id: 4, used: 2 },
       { name: '얻어온 파', amount: 0 },                               // 직접 적은 줄은 예전 그대로 빈칸
+      { name: '과자', amount: 0, pantry_id: 5, used: 0, part: true }, // 남이 뜯어 둔 걸 또 남김
     ], qtyOf),
     [
       { name: '삼겹살 600g', price: '12,000원' },
@@ -524,6 +554,7 @@ test('buyItemTexts: 값이 없는 줄은 가격 자리에 안 씀/개수/다 씀
       { name: '콩나물', price: '안 씀' },
       { name: '비엔나', price: '2개 씀' },
       { name: '얻어온 파', price: '' },
+      { name: '과자', price: '남김' },
     ],
   );
 });
@@ -543,6 +574,10 @@ test('pantryStats: 남은 개수와 아직 안 먹고 남은 값어치', () => {
   assert.deepEqual(pantryStats([{ qty: 3, left_qty: 2, done: false, amount: 9000 }]),
     { left: 1, units: 2, done: 0, leftValue: 6000 });
   assert.deepEqual(pantryStats([]), { left: 0, units: 0, done: 0, leftValue: 0 });
+  assert.equal(pantryOptionLabel({ name: '과자', amount: 1500, qty: 1, part_count: 1 }), '과자 · 먹다 남김');
+  // 먹다 남긴 과자: 한 개 남아 있지만 값어치는 이미 그 끼니에 들어갔다
+  assert.deepEqual(pantryStats([{ qty: 1, left_qty: 1, done: false, amount: 1500, part_count: 1 }]),
+    { left: 1, units: 1, done: 0, leftValue: 0 });
 });
 
 test('planMealSave: 사 둔 것만 든 세트는 거래를 만들지 않는다', () => {

@@ -1640,6 +1640,45 @@ select v.name, 'rule', v.sort_order
 from (values ('집안일', 10), ('돈', 20), ('생활', 30)) as v(name, sort_order)
 where not exists (select 1 from categories c where c.kind = 'rule' and c.name = v.name);
 
+-- 44. 사 둔 것: 한 개짜리도 '남김' ------------------------------------------------
+-- 한 개짜리는 안 씀 / 다 씀 뿐이었다. 과자 한 봉지를 뜯어 반만 먹으면 '안 씀' 이면
+-- 값이 안 들어가고, '다 씀' 이면 목록에서 사라진다. 그 사이에 '남김' 을 둔다:
+-- 먹긴 했으니 값은 들어가고(줄의 amount), 개수는 안 줄어서(used = 0) 다음 끼니에 또 나온다.
+--
+-- 줄에는 part: true 로 적힌다. 문제는 **남은 것을 마저 먹는 끼니**다. 그 끼니는 이미
+-- 누가 뜯어서 값을 냈는지 알아야 같은 한 개를 또 내지 않는다. 그래서 그 품목을 남김으로
+-- 둔 줄이 몇 개인지를 품목에 적어 둔다(part_count). 개수(left_qty)처럼 모든 줄을 다시
+-- 세므로 끼니를 고치거나 지워도 저절로 맞는다.
+
+alter table pantry_items add column if not exists part_count integer not null default 0;
+
+create or replace function pantry_parts(p_id bigint) returns integer
+language sql stable security definer set search_path = public as $$
+  select count(*)::int
+    from meal_buys b, jsonb_array_elements(b.lines) l
+   where nullif(l ->> 'pantry_id', '')::bigint = p_id
+     and coalesce((l ->> 'part')::boolean, false);
+$$;
+
+-- save_meal 은 그대로 두고, 세트 줄이 바뀔 때마다 여기서 센다 (지울 때도 — 끼니째 지우는 cascade 포함).
+create or replace function meal_buy_pantry_parts() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v jsonb := '[]'::jsonb;
+begin
+  if tg_op in ('UPDATE', 'DELETE') then v := v || coalesce(old.lines, '[]'::jsonb); end if;
+  if tg_op in ('INSERT', 'UPDATE') then v := v || coalesce(new.lines, '[]'::jsonb); end if;
+  update pantry_items p
+     set part_count = pantry_parts(p.id)
+   where p.id in (select nullif(l ->> 'pantry_id', '')::bigint from jsonb_array_elements(v) l)
+     and p.part_count is distinct from pantry_parts(p.id);
+  return null;
+end $$;
+
+drop trigger if exists meal_buys_pantry_parts on meal_buys;
+create trigger meal_buys_pantry_parts
+  after insert or update of lines or delete on meal_buys
+  for each row execute function meal_buy_pantry_parts();
+
 -- 20. 확인용 ---------------------------------------------------------------------
 
 select 'profiles' as table_name, count(*) as rows from profiles
