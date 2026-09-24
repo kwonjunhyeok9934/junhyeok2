@@ -464,10 +464,29 @@ function bindTheme() {
   });
 }
 
+// 설정은 한 번에 한 칸만 보여 준다. 마지막으로 본 칸을 기억했다가 다시 열면 거기로 간다.
+let settingsSec = 'name';
+function showSettingsSec(sec) {
+  settingsSec = sec;
+  for (const b of document.querySelectorAll('#settings-tabs [data-sec]')) {
+    b.classList.toggle('active', b.dataset.sec === sec);
+  }
+  for (const box of document.querySelectorAll('#view-settings section[data-sec]')) {
+    box.hidden = box.dataset.sec !== sec;
+  }
+}
+
 function bindSettings() {
   showVersion();
   bindTheme();
   bindPush();
+  $('#settings-tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sec]');
+    if (!b || b.dataset.sec === settingsSec) return;
+    showSettingsSec(b.dataset.sec);
+    haptic();
+  });
+  showSettingsSec(settingsSec);
   $('#btn-settings').addEventListener('click', openSettings);
   $('#settings-close').addEventListener('click', () => {
     view.settings.hidden = true;
@@ -543,7 +562,7 @@ async function renderCats() {
     const list = await fetchCategories();
     renderCategoryManager($('#cat-manage'), list, {
       onChanged: renderCats,
-      onError: () => toast('변경에 실패했어요. 다시 시도해 주세요'),
+      onError: (_err, msg) => toast(msg ?? '변경에 실패했어요. 다시 시도해 주세요'),
     });
   } catch (err) {
     console.error(err);
