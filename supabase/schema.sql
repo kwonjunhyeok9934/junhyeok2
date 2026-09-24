@@ -181,7 +181,7 @@ end $$;
 alter table categories drop constraint if exists categories_kind_check;
 -- 종류는 뒤 섹션들에서 늘어난다. 여러 번 실행해도 되도록 어디서나 같은(가장 넓은) 목록을 쓴다.
 alter table categories add constraint categories_kind_check
-  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip'));
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip', 'rule'));
 
 insert into categories (name, kind, sort_order)
 select * from (values
@@ -371,7 +371,7 @@ end $$;
 -- 13번과 같은 이유로 23번의 종류까지 미리 허용한다.
 alter table categories drop constraint if exists categories_kind_check;
 alter table categories add constraint categories_kind_check
-  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip'));
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip', 'rule'));
 
 -- 23번이 이 행들의 kind 를 'meal_how' 로 바꾸므로 둘 다 보고 판단한다.
 -- 'meal' 만 보면 전체를 다시 실행할 때마다 컬리·마트·배달이 한 벌씩 더 생긴다.
@@ -449,7 +449,7 @@ create trigger meal_buys_after_delete after delete on meal_buys
 -- 카테고리 종류를 '어디서'와 '어떻게' 로 나눈다.
 alter table categories drop constraint if exists categories_kind_check;
 alter table categories add constraint categories_kind_check
-  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip'));
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip', 'rule'));
 
 -- 21번이 넣은 kind='meal' 은 '어떻게' 였다. '집밥' 은 '어디서=집' 이 대신하므로 뺀다.
 delete from categories c
@@ -865,7 +865,7 @@ alter table trip_plans    add column if not exists category_id bigint references
 
 alter table categories drop constraint if exists categories_kind_check;
 alter table categories add constraint categories_kind_check
-  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip'));
+  check (kind in ('expense', 'income', 'fixed', 'meal', 'meal_where', 'meal_how', 'trip', 'rule'));
 
 insert into categories (name, kind, sort_order)
 select * from (values
