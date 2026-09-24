@@ -15,8 +15,8 @@ import {
   cleanLines, dropEmptyFee, howNeedsShop, howHasFee, FEE_LABEL,
   buyTotal, buyAmount, mealAmount, mealSpent, sortMealBuys, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
-  pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, pantryUsedLabel, pantryNextUsed,
-  pantryShare, pantryLeftOf,
+  pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, pantryUsedLabel, pantryNext,
+  pantryLineShare, pantryLeftOf,
 } from './calc.js';
 import { fetchCategories, addCategory } from './categories.js';
 import * as pantry from './pantry.js';
@@ -505,42 +505,55 @@ const setRowHtml = (line, opts) => (line.pantry_id ? pantryItemRowHtml(line) : i
 // 그 품목을 몇 개 샀는지 (사 둔 것 목록이 원본).
 const qtyOfPantry = (id) => Math.max(1, Number(pantry.items().find((p) => p.id === id)?.qty) || 1);
 
-// 이 끼니 말고 다른 끼니들이 이미 쓴 개수.
-// 목록의 남은 개수에는 지금 고치고 있는 끼니가 쓴 몫도 이미 빠져 있다. 그대로 쓰면
-// 제 몫을 두 번 세게 되므로, 저장돼 있던 만큼을 도로 더해서 뺀다.
+// 이 끼니 말고 다른 끼니들이 이미 쓴 것 { used: 끝낸 개수, part: 먹다 남긴 줄 수 }.
+// 목록의 숫자(남은 개수·part_count)에는 지금 고치고 있는 끼니가 쓴 몫도 이미 들어 있다.
+// 그대로 쓰면 제 몫을 두 번 세게 되므로, 저장돼 있던 만큼을 도로 빼서 본다.
 function usedByOthers(pantryId) {
   const item = pantry.items().find((p) => p.id === pantryId);
-  if (!item) return 0;
+  if (!item) return { used: 0, part: 0 };
   const all = qtyOfPantry(pantryId) - pantryLeftOf(item);
   let mine = 0;
+  let minePart = 0;
   for (const b of state.editing?.buys ?? []) {
-    for (const l of b.lines ?? []) {
-      if (Math.trunc(Number(l?.pantry_id) || 0) === pantryId) mine += Math.max(0, Number(l.used) || 0);
+    for (const l of cleanLines(b.lines)) {
+      if (l.pantry_id !== pantryId) continue;
+      mine += l.used;
+      if (l.part) minePart += 1;
     }
   }
-  return Math.max(0, all - mine);
+  return {
+    used: Math.max(0, all - mine),
+    part: Math.max(0, (Number(item.part_count) || 0) - minePart),
+  };
 }
 
-// 쓴 개수에 맞춰 값을 다시 매긴다. used 가 바뀔 때마다 불러야 한다.
+// 이 줄이 낼 몫. used·part 가 바뀔 때마다 다시 매긴다.
+function pantryAmountOf(item, { used, part }) {
+  const others = usedByOthers(item.id);
+  return pantryLineShare(item, { used, part, othersUsed: others.used, othersPart: others.part });
+}
+
+// 줄의 값을 다시 매긴 새 줄.
 function repricePantryLine(line) {
   const id = Math.trunc(Number(line?.pantry_id) || 0);
   const item = id > 0 ? pantry.items().find((p) => p.id === id) : null;
   if (!item) return line;
-  return { ...line, amount: pantryShare(item, { before: usedByOthers(id), used: line.used }) };
+  return { ...line, amount: pantryAmountOf(item, line) };
 }
 
 // 사 둔 것에서 꺼낸 줄. 이름·가격은 그 품목의 것이라 여기서 못 고치고, 몇 개 끝냈는지만 누른다.
-// 한 개짜리면 다 씀 ↔ 안 씀 이고, 여러 개면 1개 씀 → 2개 씀 → … → 다 씀 → 안 씀 으로 돈다.
+// 한 개짜리면 다 씀 → 남김 → 안 씀 이고, 여러 개면 1개 씀 → 2개 씀 → … → 다 씀 → 안 씀 으로 돈다.
 // 값은 칸이 아니라 꼬리표(data-*)에 둔다 — 읽기 전용 칸을 흉내 내는 것보다 읽기가 쉽다.
 function pantryItemRowHtml(line) {
   const qty = qtyOfPantry(line.pantry_id);
   const used = Math.max(0, Number(line.used) || 0);
+  const part = !used && line.part === true;
   return `
-    <div class="row pantry-line" data-pantry="${line.pantry_id}" data-used="${used}"
+    <div class="row pantry-line" data-pantry="${line.pantry_id}" data-used="${used}"${part ? ' data-part="1"' : ''}
          data-name="${escapeHtml(line.name ?? '')}" data-amount="${Number(line.amount) || 0}">
       <span class="nm">${escapeHtml(line.name ?? '')}</span>
       <span class="pr">${formatWon(Number(line.amount) || 0)}원</span>
-      <button type="button" class="chip mini${used ? ' selected' : ''}" data-act="toggle-done">${escapeHtml(pantryUsedLabel(used, qty))}</button>
+      <button type="button" class="chip mini${used || part ? ' selected' : ''}" data-act="toggle-done">${escapeHtml(pantryUsedLabel(used, qty, part))}</button>
       <button type="button" class="icon-btn" data-act="del-item" aria-label="이 품목 빼기">✕</button>
     </div>`;
 }
@@ -574,12 +587,14 @@ function readItemRow(row) {
   // 사 둔 것 줄은 칸이 없다 — 값을 꼬리표에서 읽는다.
   const id = Number(row.dataset.pantry);
   const used = Math.max(0, Number(row.dataset.used) || 0);
+  const part = !used && row.dataset.part === '1';
   const item = pantry.items().find((p) => p.id === id);
   return {
     name: row.dataset.name,
-    amount: item ? pantryShare(item, { before: usedByOthers(id), used }) : Number(row.dataset.amount) || 0,
+    amount: item ? pantryAmountOf(item, { used, part }) : Number(row.dataset.amount) || 0,
     pantry_id: id,
     used,
+    ...(part ? { part: true } : {}),
   };
 }
 
@@ -615,8 +630,9 @@ function onSetsClick(e) {
     commitOpenSet();
     const rows = [...e.target.closest('.set-items').children];
     const i = rows.indexOf(e.target.closest('.row'));
-    const line = s.lines[i];
-    s.lines[i] = repricePantryLine({ ...line, used: pantryNextUsed(line.used, qtyOfPantry(line.pantry_id)) });
+    const { part: _, ...line } = s.lines[i];
+    const next = pantryNext(s.lines[i], qtyOfPantry(line.pantry_id));
+    s.lines[i] = repricePantryLine({ ...line, used: next.used, ...(next.part ? { part: true } : {}) });
     haptic();
     renderSets();
     return;

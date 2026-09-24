@@ -99,7 +99,7 @@ export async function load() {
       fetchCategories(),
       sb
         .from('pantry_items')
-        .select('id,how_id,name,amount,bought_on,charged_buy_id,transaction_id,done,qty,left_qty')
+        .select('id,how_id,name,amount,bought_on,charged_buy_id,transaction_id,done,qty,left_qty,part_count')
         // 남은 것은 전부, 다 쓴 것은 최근 두 달치만 (목록이 끝없이 길어지지 않게).
         .or(`done.eq.false,bought_on.gte.${shiftDay(todayLocal(), -60)}`)
         .order('bought_on', { ascending: false })
@@ -192,7 +192,7 @@ function rowHtml(it, i) {
       <span class="tag how" style="${tint(tagColor(how))}">${escapeHtml(mdLabel(it.bought_on))}</span>
       <div class="tx-main">
         <div class="tx-cat">${escapeHtml(it.name)}${qty > 1 ? `<small> ×${qty}</small>` : ''}</div>
-        <div class="tx-memo">${it.charged_buy_id ? '가계부에 들어감' : '아직 안 들어감'}${qty > 1 && !it.done ? ` · ${left}개 남음` : ''}</div>
+        <div class="tx-memo">${it.charged_buy_id ? '가계부에 들어감' : '아직 안 들어감'}${qty > 1 && !it.done ? ` · ${left}개 남음` : ''}${qty === 1 && !it.done && it.part_count > 0 ? ' · 먹다 남김' : ''}</div>
       </div>
       <span class="tx-amount">${it.amount ? formatWon(it.amount) : ''}</span>
       <button type="button" class="chip mini${it.done ? ' selected' : ''}" data-act="toggle">${it.done ? '다 씀' : '남김'}</button>
