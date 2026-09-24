@@ -393,7 +393,7 @@ function renderSubtabs(group, tab) {
         .join('');
 }
 
-// ---- 뒤로가기: 열린 것 닫기 → 경고 한 번 → 종료 ------------------------------
+// ---- 뒤로가기: 열린 것 닫기 → 홈으로 → 경고 한 번 → 종료 ------------------------
 //
 // 맨 아래 항목(앱을 켤 때의 주소) 위에 가드 항목을 몇 개 쌓아 두고, 뒤로가기가 가드를
 // 하나 꺼낼 때마다 popstate 에서 처리한다. 맨 아래까지 내려오면 경고를 띄우고, 거기서
@@ -404,7 +404,8 @@ function renderSubtabs(group, tab) {
 // 넣으면 다음 뒤로가기가 그 아래 항목까지 건너뛰어 경고 없이 앱이 닫혔다 (가끔만 되던 이유).
 // 가드는 사용자가 누르거나 칠 때만 채우고, 뒤로가기 사이에는 미리 쌓아 둔 것을 쓴다.
 
-const GUARD_DEPTH = 3; // 시트 위에 창이 또 열려 있어도 하나씩 닫고 경고까지 갈 수 있는 개수
+// 시트 위에 창이 또 열려 있고 홈이 아닌 탭이어도, 하나씩 닫고 홈을 거쳐 경고까지 갈 수 있는 개수
+const GUARD_DEPTH = 4;
 
 function guardDepth() {
   return (history.state && history.state.guard) || 0;
@@ -450,13 +451,19 @@ function setupBackGuard() {
     if (location.hash !== tabHash) history.replaceState(history.state, '', tabHash);
 
     const depth = guardDepth();
-    if (closeTopLayer()) {
+    // 1) 열린 시트·창을 닫는다. 2) 홈이 아니면 홈으로 간다.
+    let handled = closeTopLayer();
+    if (!handled && currentTab() !== 'home') {
+      goTab('home');
+      handled = true;
+    }
+    if (handled) {
       // 드물게 가드가 바닥났으면 하나 넣는다. 건드리지 않고 넣은 것이라 크롬이 건너뛸 수는 있다.
-      if (depth === 0) history.pushState({ guard: 1 }, '', tabHash);
+      if (depth === 0) history.pushState({ guard: 1 }, '', '#' + currentTab());
       return;
     }
     if (depth > 0) {
-      // 닫을 것이 없다. 남은 가드를 한 번에 내려가면 맨 아래에서 다시 popstate 가 온다.
+      // 홈이고 닫을 것도 없다. 남은 가드를 한 번에 내려가면 맨 아래에서 다시 popstate 가 온다.
       history.go(-depth);
       return;
     }
