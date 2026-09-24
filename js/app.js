@@ -393,51 +393,75 @@ function renderSubtabs(group, tab) {
         .join('');
 }
 
-// ---- 뒤로가기: 열린 것 닫기 → 두 번 눌러 종료 ----------------------------------
+// ---- 뒤로가기: 열린 것 닫기 → 경고 한 번 → 종료 ------------------------------
+//
+// 맨 아래 항목(앱을 켤 때의 주소) 위에 가드 항목을 몇 개 쌓아 두고, 뒤로가기가 가드를
+// 하나 꺼낼 때마다 popstate 에서 처리한다. 맨 아래까지 내려오면 경고를 띄우고, 거기서
+// 한 번 더 누르면 더 내려갈 곳이 없으니 앱이 닫힌다.
+//
+// 크롬은 사용자가 화면을 건드리지 않은 채 넣은 히스토리 항목을 뒤로가기에서 건너뛴다.
+// 뒤로가기를 한 번 누른 뒤에도 다시 건드려야 풀린다. 그래서 popstate 안에서 가드를 다시
+// 넣으면 다음 뒤로가기가 그 아래 항목까지 건너뛰어 경고 없이 앱이 닫혔다 (가끔만 되던 이유).
+// 가드는 사용자가 누르거나 칠 때만 채우고, 뒤로가기 사이에는 미리 쌓아 둔 것을 쓴다.
 
-let exitArmed = 0;
+const GUARD_DEPTH = 3; // 시트 위에 창이 또 열려 있어도 하나씩 닫고 경고까지 갈 수 있는 개수
+
+function guardDepth() {
+  return (history.state && history.state.guard) || 0;
+}
+
 let lastHash = location.hash;
-let guardArmed = false;
 
-// 크롬은 사용자가 화면을 건드리기 전에 앱이 넣은 히스토리 항목을 뒤로가기에서 무시한다.
-// 그래서 첫 터치 직후에 가드 항목을 넣는다.
-function armGuard() {
-  if (guardArmed) return;
-  guardArmed = true;
-  history.pushState({ guard: true }, '', '#' + currentTab());
+function fillGuards() {
+  for (let d = guardDepth() + 1; d <= GUARD_DEPTH; d++) {
+    history.pushState({ guard: d }, '', '#' + currentTab());
+  }
+}
+
+// 열려 있는 시트나 창을 하나 닫는다. 닫은 것이 있으면 true.
+function closeTopLayer() {
+  const openSheetEl = document.querySelector('.sheet.open');
+  if (openSheetEl) {
+    closeSheet(openSheetEl);
+    return true;
+  }
+  const overlay = document.querySelector('.overlay:not([hidden])');
+  if (overlay) {
+    if (overlay === overlayTrip) trip.closeDetail();
+    else {
+      overlay.hidden = true;
+      ledger.refresh();
+    }
+    return true;
+  }
+  return false;
 }
 
 function setupBackGuard() {
-  document.addEventListener('pointerdown', armGuard, { once: true, capture: true });
+  // 브라우저가 "사용자가 건드렸다"고 쳐 주는 이벤트들. 터치는 손을 뗄 때 쳐 준다.
+  for (const type of ['pointerup', 'keydown']) {
+    document.addEventListener(type, fillGuards, { capture: true, passive: true });
+  }
 
   window.addEventListener('popstate', () => {
     // 뒤로가기로 이전 항목에 내려오면 주소의 # 이 바뀔 수 있다. 보고 있던 탭을 그대로 유지한다.
+    // (가드 깊이가 state 에 있으니 state 는 그대로 둔다.)
     const tabHash = '#' + currentTab(lastHash);
-    if (location.hash !== tabHash) history.replaceState(null, '', tabHash);
+    if (location.hash !== tabHash) history.replaceState(history.state, '', tabHash);
 
-    const openSheetEl = document.querySelector('.sheet.open');
-    if (openSheetEl) {
-      closeSheet(openSheetEl);
-      history.pushState({ guard: true }, '', tabHash);
+    const depth = guardDepth();
+    if (closeTopLayer()) {
+      // 드물게 가드가 바닥났으면 하나 넣는다. 건드리지 않고 넣은 것이라 크롬이 건너뛸 수는 있다.
+      if (depth === 0) history.pushState({ guard: 1 }, '', tabHash);
       return;
     }
-    const overlay = document.querySelector('.overlay:not([hidden])');
-    if (overlay) {
-      if (overlay === overlayTrip) trip.closeDetail();
-      else {
-        overlay.hidden = true;
-        ledger.refresh();
-      }
-      history.pushState({ guard: true }, '', tabHash);
+    if (depth > 0) {
+      // 닫을 것이 없다. 남은 가드를 한 번에 내려가면 맨 아래에서 다시 popstate 가 온다.
+      history.go(-depth);
       return;
     }
-    if (Date.now() - exitArmed < 2000) {
-      history.back(); // 가드 아래로 내려가 앱이 닫힌다
-      return;
-    }
-    exitArmed = Date.now();
-    toast('뒤로가기를 한 번 더 누르면 종료합니다');
-    history.pushState({ guard: true }, '', tabHash);
+    // 맨 아래. 여기서 한 번 더 누르면 앱이 닫힌다. 그 사이에 화면을 건드리면 가드가 다시 채워진다.
+    toast('뒤로가기를 한 번 더 누르면 앱을 나갑니다');
   });
 }
 
