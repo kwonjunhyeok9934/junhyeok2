@@ -6,7 +6,7 @@ import {
   groupByDate, formatWon, parseWon, dueLabel, sortTodos,
   calendarGrid, groupEventsByDate, formatTime, spanRange, rangeLabel, monthsBetween, sumByMonth, shiftDay, nextOccurrence,
   dayName, dayLabel, weekStart, weekDays, weekLabel, slotOfHour, resolveMealCategoryId,
-  cleanLines, dropEmptyFee, howNeedsShop, howHasFee,
+  cleanLines, dropEmptyFee, howNeedsShop, howHasFee, howPlaces, howsForPlace, DISCOUNT_LABEL,
   buyTotal, buyAmount, mealAmount, mealSpent, sortMealBuys, mealBuyMemo, buyItemTexts, tagColor,
   groupMealsBySlot, sumMeals, sumMealsByDate, sumMealsByHow, planMealSave, planMealDelete,
   pantryLine, pantryChoices, pantryOptionLabel, usedPantryIds, groupPantryByHow, pantryStats,
@@ -1070,4 +1070,43 @@ test('groupPacking: 기본 분류 순서 → 새 분류는 이름 순', () => {
 
 test('groupPacking: 비어 있으면 빈 목록', () => {
   assert.deepEqual(groupPacking([], ['의류']), []);
+});
+
+test('howsForPlace: 어디서마다 어떻게를 나눠 보여 준다', () => {
+  const HOME = 1, WORK = 2, OUT = 3;
+  const hows = [
+    { id: 10, name: '컬리', where_ids: [HOME] },
+    { id: 11, name: '포장', where_ids: [HOME, OUT] },
+    { id: 12, name: '회사', where_ids: [WORK] },
+    { id: 13, name: '외식', where_ids: [OUT] },
+    { id: 14, name: '새것', where_ids: null },      // 아직 안 나눈 것은 어디서든
+    { id: 15, name: '옛것', where_ids: [99] },      // 지워진 어디서만 적힌 것도 어디서든
+  ];
+  const placeIds = [HOME, WORK, OUT];
+  const names = (placeId, opts = {}) => howsForPlace(hows, placeId, { placeIds, ...opts }).map((c) => c.name);
+  assert.deepEqual(names(HOME), ['컬리', '포장', '새것', '옛것']);
+  assert.deepEqual(names(WORK), ['회사', '새것', '옛것']);
+  assert.deepEqual(names(OUT), ['포장', '외식', '새것', '옛것']);
+  // 이미 골라 둔 것은 다른 곳 것이어도 남는다
+  assert.deepEqual(names(WORK, { keepId: 10 }), ['컬리', '회사', '새것', '옛것']);
+  // 어디서를 안 골랐으면 전부
+  assert.equal(howsForPlace(hows, null).length, hows.length);
+  // 열이 아직 없을 때(schema.sql 안 돌림)도 전부 나온다
+  assert.equal(howsForPlace([{ id: 1, name: '컬리' }], HOME, { placeIds }).length, 1);
+  assert.deepEqual(howPlaces({ where_ids: ['1', 99] }, placeIds), [1]);
+});
+
+test('배달 할인: 적은 만큼 빼고, 빈 칸은 버리고, 0 아래로는 안 간다', () => {
+  const lines = [{ name: '치킨', amount: 20000 }, { name: DISCOUNT_LABEL, amount: 3000 }, { name: '배달료', amount: 2000 }];
+  assert.deepEqual(cleanLines(lines).map((l) => l.amount), [20000, -3000, 2000]);
+  assert.equal(buyTotal({ lines }), 19000);
+  // 음수로 적혀 있어도(저장된 줄) 같은 값
+  assert.equal(buyTotal({ lines: cleanLines(lines) }), 19000);
+  // 값 없는 할인 칸은 저장하지 않는다
+  assert.deepEqual(dropEmptyFee([{ name: '치킨', amount: 20000 }, { name: DISCOUNT_LABEL, amount: 0 }]), [{ name: '치킨', amount: 20000 }]);
+  assert.equal(buyTotal({ lines: [{ name: '김밥', amount: 2000 }, { name: DISCOUNT_LABEL, amount: 5000 }] }), 0);
+  // 가계부 거래 금액에도 할인이 빠진다
+  const cats = [{ id: 1, name: '식비', kind: 'expense' }, { id: 9, name: '배달', kind: 'meal_how' }];
+  const plan = planMealSave(null, { date: '2026-09-24', slot: 'dinner', menu: '치킨', buys: [{ howId: 9, lines }] }, cats);
+  assert.equal(plan.buys[0].tx.payload.amount, 19000);
 });

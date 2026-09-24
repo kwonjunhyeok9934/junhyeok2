@@ -21,6 +21,9 @@ union all select '열 pantry_items.qty',
 union all select '열 pantry_items.part_count',
        case when exists (select 1 from information_schema.columns
                           where table_name = 'pantry_items' and column_name = 'part_count') then '있음' else '없음' end
+union all select '열 categories.where_ids',
+       case when exists (select 1 from information_schema.columns
+                          where table_name = 'categories' and column_name = 'where_ids') then '있음' else '없음' end
 union all select '함수 pantry_left',
        case when exists (select 1 from pg_proc where proname = 'pantry_left') then '있음' else '없음' end
 union all select '함수 notify_webhook',

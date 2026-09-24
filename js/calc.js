@@ -237,13 +237,36 @@ export const HOW_NEEDS_SHOP = ['배달', '포장', '외식'];
 // 배달만 배달료 칸을 품목 맨 밑에 기본으로 둔다.
 export const HOW_HAS_FEE = ['배달'];
 export const FEE_LABEL = '배달료';
+// 배달은 배달료 바로 위에 할인 칸도 둔다. 양수로 적어도 빼는 값으로 센다 (줄에는 음수로 남는다).
+export const DISCOUNT_LABEL = '할인';
+export const isDiscountLine = (l) => String(l?.name ?? '').trim() === DISCOUNT_LABEL;
 
 export const howNeedsShop = (name) => HOW_NEEDS_SHOP.includes(String(name ?? '').trim());
 export const howHasFee = (name) => HOW_HAS_FEE.includes(String(name ?? '').trim());
 
-// 저장할 품목 줄. 값이 안 적힌 배달료 칸은 버린다 (기본으로 놓인 빈 칸이라).
+// '어떻게' 가 나올 '어디서' id 들. 지워진 어디서는 뺀다 (placeIds = 지금 있는 어디서 id 들).
+// 비어 있으면 어디서든 나온다.
+export function howPlaces(how, placeIds = null) {
+  const ids = Array.isArray(how?.where_ids) ? how.where_ids.map(Number) : [];
+  return placeIds ? ids.filter((id) => placeIds.includes(id)) : ids;
+}
+
+// 그 '어디서' 에서 고를 '어떻게' 들. keepId 는 이미 골라 둔 것 — 다른 곳 것이어도 보여 준다.
+export function howsForPlace(hows, placeId, { keepId = null, placeIds = null } = {}) {
+  if (placeId == null) return hows;
+  const pid = Number(placeId);
+  return hows.filter((c) => {
+    const ids = howPlaces(c, placeIds);
+    return !ids.length || ids.includes(pid) || c.id === keepId;
+  });
+}
+
+// 저장할 품목 줄. 값이 안 적힌 배달료·할인 칸은 버린다 (기본으로 놓인 빈 칸이라).
 export function dropEmptyFee(lines) {
-  return (lines ?? []).filter((l) => !(String(l?.name ?? '').trim() === FEE_LABEL && !Number(l?.amount)));
+  return (lines ?? []).filter((l) => {
+    const name = String(l?.name ?? '').trim();
+    return !((name === FEE_LABEL || name === DISCOUNT_LABEL) && !Number(l?.amount));
+  });
 }
 export const SLOT_LABEL = { breakfast: '아침', lunch: '점심', dinner: '저녁', night: '야식', grocery: '장보기' };
 
@@ -274,14 +297,15 @@ export function slotOfHour(h) {
   return 'night';
 }
 
-// 품목 줄 정리: 이름·가격이 둘 다 빈 줄은 버리고 금액은 0 이상 정수로.
+// 품목 줄 정리: 이름·가격이 둘 다 빈 줄은 버리고 금액은 0 이상 정수로. 할인 줄만 0 이하.
 // 사 둔 것에서 꺼낸 줄만 pantry_id·used 를 더 달고 다닌다 (직접 적은 줄은 예전 그대로 두 칸).
 export function cleanLines(lines) {
   return (lines ?? [])
     .map((l) => {
+      const n = Math.trunc(Number(l?.amount) || 0);
       const out = {
         name: String(l?.name ?? '').trim(),
-        amount: Math.max(0, Math.trunc(Number(l?.amount) || 0)),
+        amount: isDiscountLine(l) ? -Math.abs(n) : Math.max(0, n),
       };
       const id = Math.trunc(Number(l?.pantry_id) || 0);
       if (id > 0) {
@@ -299,8 +323,9 @@ export function cleanLines(lines) {
 }
 
 // 세트에 적힌 품목 가격의 합 = 식비 탭이 원본으로 삼는 값.
+// 할인이 더 커도 0 아래로는 안 내려간다.
 export function buyTotal(buy) {
-  return cleanLines(buy?.lines).reduce((a, l) => a + l.amount, 0);
+  return Math.max(0, cleanLines(buy?.lines).reduce((a, l) => a + l.amount, 0));
 }
 
 // 실제로 가계부에 잡혀 있는 금액. 연결이 끊겼거나 수입으로 바뀌었으면 0.
@@ -456,7 +481,7 @@ export function planMealSave(before, input, cats) {
 
     // 사 둔 것에서 꺼낸 줄은 가계부로 가지 않는다. 장 볼 때 이미 낸 돈이라
     // 여기서 또 세면 같은 돈을 두 번 세게 된다. (식비 합계에는 buyTotal 로 들어간다.)
-    const amount = lines.reduce((a, l) => a + (l.pantry_id ? 0 : l.amount), 0);
+    const amount = Math.max(0, lines.reduce((a, l) => a + (l.pantry_id ? 0 : l.amount), 0));
     const payload = {
       amount,
       category_id: resolveMealCategoryId(cats, was?.tx ?? null),

@@ -306,7 +306,9 @@ async function createHow() {
   const name = el.newHow.value;
   if (!name.trim()) return;
   try {
-    const created = await addCategory(name, 'meal_how', state.cats);
+    // 사 둔 것은 집에서 먹을 것이다. 새로 만든 곳은 식비의 '집' 에 나오게 한다.
+    const home = catsOf('meal_where').find((c) => c.name === '집');
+    const created = await addCategory(name, 'meal_how', state.cats, home ? { where_ids: [home.id] } : {});
     state.cats = await fetchCategories();
     if (!pantryHows().some((c) => c.id === created.id)) {
       toast(`'${created.name}' 은 갈 때마다 가게가 달라서 사 둔 것에 담지 않아요`);
