@@ -607,12 +607,22 @@
 
 <!-- 설정 -->
 <div id="view-settings" class="overlay" hidden>
+  <div class="topwrap">
   <header class="topbar">
     <button id="settings-close" class="icon-btn" aria-label="닫기">←</button>
     <h1>설정</h1>
   </header>
+  <!-- 한 번에 한 칸만 보여 준다 (다 펼쳐 두니 너무 길었다). 칸은 data-sec 로 짝을 짓는다. -->
+  <nav id="settings-tabs" class="subtabs settings-tabs">
+    <button type="button" class="subtab" data-sec="name">내 이름</button>
+    <button type="button" class="subtab" data-sec="anniv">기념일</button>
+    <button type="button" class="subtab" data-sec="push">알림</button>
+    <button type="button" class="subtab" data-sec="theme">화면</button>
+    <button type="button" class="subtab" data-sec="cats">카테고리</button>
+  </nav>
+  </div>
   <main class="settings-body">
-    <section class="card">
+    <section class="card" data-sec="name">
       <h2>내 이름</h2>
       <div class="row">
         <input id="my-name" type="text" maxlength="10" placeholder="표시할 이름">
@@ -621,13 +631,13 @@
       <p class="hint">거래 옆에 첫 글자가 표시돼요.</p>
     </section>
 
-    <section class="card">
+    <section class="card" data-sec="anniv" hidden>
       <h2>기념일</h2>
       <div id="anniv-manage"></div>
-      <p class="hint">가장 가까운 기념일이 홈에 D-day로 보여요.</p>
+      <p class="hint">가장 가까운 기념일이 홈에 D-day로 보여요. 줄을 누르면 고칠 수 있어요.</p>
     </section>
 
-    <section class="card">
+    <section class="card" data-sec="push" hidden>
       <h2>알림</h2>
       <div class="row">
         <span id="push-state" class="grow">확인 중…</span>
@@ -637,7 +647,7 @@
       <button type="button" id="push-test" class="btn small" style="margin-top:8px" hidden>테스트 알림 보내기</button>
     </section>
 
-    <section class="card">
+    <section class="card" data-sec="theme" hidden>
       <h2>화면</h2>
       <div id="theme-seg" class="seg">
         <label><input type="radio" name="theme" value="system"><span>시스템</span></label>
@@ -646,9 +656,10 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" data-sec="cats" hidden>
       <h2>카테고리</h2>
       <div id="cat-manage"></div>
+      <p class="hint">이름을 누르거나 ✎ 로 고쳐요. ▲▼ 는 순서예요.</p>
     </section>
 
     <button id="btn-logout" class="btn wide">로그아웃</button>
