@@ -87,6 +87,32 @@
 
     </section>
 
+    <section id="tab-stats" class="tab" hidden>
+      <div id="stat-units" class="seg stat-units" role="radiogroup" aria-label="기간 단위">
+        <label><input type="radio" name="stat-unit" value="week"><span>주</span></label>
+        <label><input type="radio" name="stat-unit" value="month"><span>월</span></label>
+        <label><input type="radio" name="stat-unit" value="year"><span>년</span></label>
+      </div>
+      <div class="month-nav">
+        <button id="stat-prev" class="icon-btn" aria-label="이전">◀</button>
+        <span id="stat-label"></span>
+        <button id="stat-next" class="icon-btn" aria-label="다음">▶</button>
+      </div>
+      <div class="range-row"><button type="button" id="stat-today" class="pill" hidden>오늘로</button></div>
+
+      <div class="card stat-hero">
+        <span class="sum-label">지출</span>
+        <strong id="stat-total">0원</strong>
+        <p id="stat-compare" class="stat-compare"></p>
+        <p id="stat-avg" class="hint"></p>
+      </div>
+
+      <div class="card">
+        <h2>카테고리별</h2>
+        <div id="stat-chart"><div class="skel"></div></div>
+      </div>
+    </section>
+
     <section id="tab-fixed" class="tab" hidden>
       <div class="card fixed-total">
         <span class="sum-label">월 고정비 합계</span>
@@ -284,6 +310,12 @@
       <button type="submit" id="range-apply" class="btn primary wide">이 기간으로 보기</button>
     </form>
   </div>
+</div>
+
+<!-- 통계: 카테고리 하나 자세히 -->
+<div id="sheet-stat" class="sheet" aria-hidden="true">
+  <div class="sheet-backdrop"></div>
+  <div class="sheet-panel" id="stat-detail"></div>
 </div>
 
 <!-- 고정비 시트 -->

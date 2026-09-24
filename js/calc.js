@@ -949,3 +949,176 @@ export function tripsByRegion(trips) {
   for (const list of map.values()) list.sort((a, b) => b.start_date.localeCompare(a.start_date));
   return map;
 }
+
+// ---- 통계 (지출을 원형으로) ------------------------------------------------------
+// 주·월·년 중 하나를 골라 그 기간의 지출을 카테고리별로 나눠 본다.
+// anchor 는 그 기간 안의 아무 날짜('YYYY-MM-DD'). 기간을 옮길 때는 기간의 첫날로 맞춘다.
+
+export const STAT_UNITS = ['week', 'month', 'year'];
+export const STAT_UNIT_LABEL = { week: '주', month: '월', year: '년' };
+const STAT_PREV = { week: '지난주', month: '지난달', year: '작년' };
+
+// 그 기간의 { start, end } (둘 다 포함). 주는 월요일부터 (식비 탭과 같다).
+export function statRange(unit, anchor) {
+  const [y, m] = anchor.split('-').map(Number);
+  if (unit === 'week') {
+    const start = weekStart(anchor);
+    return { start, end: shiftDay(start, 6) };
+  }
+  if (unit === 'year') return { start: `${y}-01-01`, end: `${y}-12-31` };
+  return monthRange(y, m);
+}
+
+// delta 만큼 옮긴 기간의 첫날.
+export function shiftStat(unit, anchor, delta) {
+  const [y, m] = anchor.split('-').map(Number);
+  if (unit === 'week') return shiftDay(weekStart(anchor), 7 * delta);
+  if (unit === 'year') return `${y + delta}-01-01`;
+  const t = shiftMonth(y, m, delta);
+  return `${t.year}-${pad2(t.month)}-01`;
+}
+
+// '9월 22일 ~ 28일' / '2026년 9월' / '2026년'. 주는 올해가 아니면 연도를 붙인다.
+export function statLabel(unit, anchor, today = todayLocal()) {
+  const [y, m] = anchor.split('-').map(Number);
+  if (unit === 'year') return `${y}년`;
+  if (unit === 'month') return monthLabel(y, m);
+  const start = weekStart(anchor);
+  const sy = Number(start.slice(0, 4));
+  return `${sy === Number(today.slice(0, 4)) ? '' : `${sy}년 `}${weekLabel(start)}`;
+}
+
+// '지난달보다 12,000원 더 썼어요' 에 쓸 말과 차이. 지난 기간이 0원이면 비교하지 않는다.
+export function statCompare(unit, now, prev) {
+  const a = Math.max(0, Math.trunc(Number(now) || 0));
+  const b = Math.max(0, Math.trunc(Number(prev) || 0));
+  if (!b) return null;
+  const diff = a - b;
+  return { word: STAT_PREV[unit], diff, pct: Math.round((Math.abs(diff) / b) * 100) };
+}
+
+// 정수 퍼센트로 반올림하되 합이 정확히 100 이 되게 한다 (가장 큰 나머지 방식).
+// 그냥 반올림하면 33 + 33 + 33 = 99 처럼 원 둘레와 목록의 합이 어긋난다.
+export function roundPercents(values) {
+  const nums = (values ?? []).map((v) => Math.max(0, Number(v) || 0));
+  const total = nums.reduce((a, b) => a + b, 0);
+  if (!total) return nums.map(() => 0);
+  const raw = nums.map((v) => (v / total) * 100);
+  const out = raw.map(Math.floor);
+  let left = 100 - out.reduce((a, b) => a + b, 0);
+  const order = raw.map((r, i) => [r - Math.floor(r), i]).sort((p, q) => q[0] - p[0] || p[1] - q[1]);
+  for (const [, i] of order) {
+    if (left <= 0) break;
+    out[i] += 1;
+    left -= 1;
+  }
+  return out;
+}
+
+// 원에 올릴 조각. 큰 것부터 max-1 개를 그대로 두고 나머지는 '기타' 한 조각으로 모은다.
+// 조각이 너무 많으면 색이 서로 안 구별된다 (여섯 개가 한계).
+// rows: [{ key, name, total }] → [{ key, name, total, pct, other?, members? }]
+export function donutSlices(rows, max = 6) {
+  const clean = (rows ?? [])
+    .map((r) => ({ ...r, total: Math.max(0, Math.trunc(Number(r.total) || 0)) }))
+    .filter((r) => r.total > 0)
+    .sort((a, b) => b.total - a.total);
+  let slices = clean;
+  if (clean.length > max) {
+    const rest = clean.slice(max - 1);
+    slices = [
+      ...clean.slice(0, max - 1),
+      { key: '__other', name: '기타', total: rest.reduce((a, r) => a + r.total, 0), other: true, members: rest },
+    ];
+  }
+  const pcts = roundPercents(slices.map((s) => s.total));
+  return slices.map((s, i) => ({ ...s, pct: pcts[i] }));
+}
+
+// 조각마다 색 칸(0 ~ slots-1). 같은 카테고리는 기간을 옮겨도 같은 색이 되도록
+// prefOf(key) 가 돌려주는 칸(카테고리 목록에서의 자리)을 먼저 쓰고, 겹치거나 없으면
+// 남은 칸 중 앞의 것을 쓴다. '기타' 는 -1 (회색).
+export function assignSlots(slices, prefOf = () => -1, slots = 6) {
+  const out = new Map();
+  const used = new Set();
+  for (const s of slices ?? []) {
+    if (s.other) continue;
+    const p = prefOf(s.key);
+    if (Number.isInteger(p) && p >= 0 && p < slots && !used.has(p)) {
+      out.set(s.key, p);
+      used.add(p);
+    }
+  }
+  for (const s of slices ?? []) {
+    if (s.other) { out.set(s.key, -1); continue; }
+    if (out.has(s.key)) continue;
+    let k = 0;
+    while (used.has(k) && k < slots) k++;
+    out.set(s.key, k < slots ? k : -1);
+    used.add(k);
+  }
+  return out;
+}
+
+// 지출만 카테고리별로. [{ key: category_id|null, name, total, count }]
+export function statByCategory(txs, cats) {
+  const nameOf = new Map((cats ?? []).map((c) => [c.id, c.name]));
+  const map = new Map();
+  for (const t of txs ?? []) {
+    if (t.kind !== 'expense') continue;
+    const key = t.category_id ?? null;
+    const row = map.get(key) ?? { key, name: key === null ? '미분류' : (nameOf.get(key) ?? '미분류'), total: 0, count: 0 };
+    row.total += Math.max(0, Math.trunc(Number(t.amount) || 0));
+    row.count += 1;
+    map.set(key, row);
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total);
+}
+
+// 식비를 '어떻게' 로 나눈다 (배달·컬리·마트…).
+// 식비 탭에서 온 거래는 그 세트의 how_id, 사 둔 것을 담으며 생긴 거래는 그 품목들의 how_id 를 쓴다.
+// 가계부에 직접 적은 식비는 어디서 샀는지 모르니 '직접 적음' 으로 모은다.
+//   howOfTx: Map(transaction_id → how_id)
+export function statByHow(txs, howOfTx, cats) {
+  const nameOf = new Map((cats ?? []).map((c) => [c.id, c.name]));
+  const map = new Map();
+  for (const t of txs ?? []) {
+    if (t.kind !== 'expense') continue;
+    const how = howOfTx?.get(t.id) ?? null;
+    const key = how === null || !nameOf.has(how) ? null : how;
+    const row = map.get(key) ?? { key, name: key === null ? '직접 적음' : nameOf.get(key), total: 0, count: 0 };
+    row.total += Math.max(0, Math.trunc(Number(t.amount) || 0));
+    row.count += 1;
+    map.set(key, row);
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total);
+}
+
+// 식비가 아닌 카테고리는 메모로 나눈다 (교통: 택시·버스…). 같은 글자끼리만 묶는다.
+export function statByMemo(txs) {
+  const map = new Map();
+  for (const t of txs ?? []) {
+    if (t.kind !== 'expense') continue;
+    const memo = String(t.memo ?? '').trim();
+    const key = memo || null;
+    const row = map.get(key) ?? { key, name: memo || '메모 없음', total: 0, count: 0 };
+    row.total += Math.max(0, Math.trunc(Number(t.amount) || 0));
+    row.count += 1;
+    map.set(key, row);
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total);
+}
+
+// 누가 썼나. profiles 순서대로, 적은 사람을 모르는 거래는 '모름'.
+export function statByWho(txs, profiles) {
+  const map = new Map((profiles ?? []).map((p) => [p.id, { key: p.id, name: p.name || '이름 없음', color: p.color, total: 0 }]));
+  for (const t of txs ?? []) {
+    if (t.kind !== 'expense') continue;
+    const key = t.created_by ?? null;
+    if (!map.has(key)) map.set(key, { key, name: '모름', color: null, total: 0 });
+    map.get(key).total += Math.max(0, Math.trunc(Number(t.amount) || 0));
+  }
+  const rows = [...map.values()].filter((r) => r.total > 0);
+  const pcts = roundPercents(rows.map((r) => r.total));
+  return rows.map((r, i) => ({ ...r, pct: pcts[i] }));
+}

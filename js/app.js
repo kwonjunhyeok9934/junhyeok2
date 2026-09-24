@@ -2,6 +2,7 @@
 import { isConfigured, sb, getSession, signIn, signOut, onAuthChange } from './supabase.js';
 import { $, toast, haptic, closeSheet } from './ui.js';
 import * as ledger from './ledger.js';
+import * as stats from './stats.js';
 import * as todo from './todo.js';
 import * as schedule from './schedule.js';
 import * as fixed from './fixed.js';
@@ -29,6 +30,7 @@ const overlayTrip = $('#view-trip');
 const TABS = {
   home: { title: '우리집', el: $('#tab-home'), group: 'home' },
   ledger: { title: '가계부', el: $('#tab-ledger'), group: 'money' },
+  stats: { title: '통계', el: $('#tab-stats'), group: 'money' },
   meal: { title: '식비', el: $('#tab-meal'), group: 'money' },
   fixed: { title: '고정비', el: $('#tab-fixed'), group: 'money' },
   pantry: { title: '사둔것', el: $('#tab-pantry'), group: 'money' },
@@ -43,7 +45,7 @@ const TABS = {
 // 아래 탭바 다섯 칸. 한 칸 안의 화면은 위쪽 작은 탭으로 옮겨 다닌다.
 const GROUPS = {
   home: ['home'],
-  money: ['ledger', 'meal', 'fixed', 'pantry'],
+  money: ['ledger', 'stats', 'meal', 'fixed', 'pantry'],
   plan: ['schedule', 'todo'],
   travel: ['travel', 'trips', 'packing'],
   rule: ['rule'],
@@ -229,6 +231,7 @@ function enterMain(user) {
     history.replaceState(history.state, '', '#home');
   }
   ledger.init({ userId: user.id });
+  stats.init();
   todo.init({ userId: user.id });
   schedule.init({ userId: user.id });
   fixed.init();
@@ -283,14 +286,14 @@ function subscribeRealtime() {
   if (channels.length) return;
   const main = sb
     .channel('db-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => { ledger.refresh(); home.refresh(); meal.refresh(); })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => ledger.refresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => { ledger.refresh(); home.refresh(); meal.refresh(); refreshStatsIfShown(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => { ledger.refresh(); refreshStatsIfShown(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, () => { todo.refresh(); home.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => { schedule.refresh(); home.refresh(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'fixed_costs' }, () => fixed.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'anniversaries' }, () => home.refresh())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'meals' }, () => meal.refresh())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_buys' }, () => { meal.refresh(); ledger.refresh(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_buys' }, () => { meal.refresh(); ledger.refresh(); refreshStatsIfShown(); })
     .subscribe();
   // 여행 표는 나중에 생겼다. 아직 SQL 을 안 돌린 사람도 위 구독은 멀쩡하도록 따로 둔다.
   const travelCh = sb
@@ -345,6 +348,11 @@ function bindTabs() {
   });
 }
 
+// 통계는 무거운 편이라(표 넷) 보고 있을 때만 다시 받는다. 안 보일 때 바뀐 것은 다시 열 때 받는다.
+function refreshStatsIfShown() {
+  if (currentTab() === 'stats') stats.refresh();
+}
+
 function currentTab(hash = location.hash) {
   const name = hash.replace('#', '') || 'home';
   return TABS[name] ? name : 'home';
@@ -365,6 +373,8 @@ function routeHash() {
     const wasHidden = t.el.hidden;
     t.el.hidden = k !== tab;
     if (wasHidden && !t.el.hidden) {
+      // 통계는 보일 때만 받아 온다 (가계부·식비에서 바꾼 것이 여기서 바로 보이게).
+      if (k === 'stats') stats.refresh();
       // 다시 보일 때 등장 애니메이션을 재생한다.
       t.el.style.animation = 'none';
       void t.el.offsetWidth;

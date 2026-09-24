@@ -1072,6 +1072,110 @@ test('groupPacking: 비어 있으면 빈 목록', () => {
   assert.deepEqual(groupPacking([], ['의류']), []);
 });
 
+// ---- 통계 ----------------------------------------------------------------------
+import {
+  statRange, shiftStat, statLabel, statCompare, roundPercents, donutSlices, assignSlots,
+  statByCategory, statByHow, statByMemo, statByWho,
+} from '../js/calc.js';
+
+test('statRange / shiftStat: 주는 월요일부터, 달·해는 첫날부터 끝날까지', () => {
+  assert.deepEqual(statRange('week', '2026-09-24'), { start: '2026-09-21', end: '2026-09-27' }); // 목요일
+  assert.deepEqual(statRange('month', '2026-02-10'), { start: '2026-02-01', end: '2026-02-28' });
+  assert.deepEqual(statRange('year', '2026-09-24'), { start: '2026-01-01', end: '2026-12-31' });
+  assert.equal(shiftStat('week', '2026-09-24', -1), '2026-09-14');
+  assert.equal(shiftStat('month', '2026-01-31', -1), '2025-12-01');
+  assert.equal(shiftStat('month', '2026-12-05', 1), '2027-01-01');
+  assert.equal(shiftStat('year', '2026-09-24', -1), '2025-01-01');
+});
+
+test('statLabel: 주는 올해가 아니면 연도를 붙인다', () => {
+  assert.equal(statLabel('month', '2026-09-24'), '2026년 9월');
+  assert.equal(statLabel('year', '2026-09-24'), '2026년');
+  assert.equal(statLabel('week', '2026-09-24', '2026-09-24'), '9월 21일 ~ 27일');
+  assert.equal(statLabel('week', '2025-12-31', '2026-09-24'), '2025년 12월 29일 ~ 1월 4일');
+});
+
+test('statCompare: 지난 기간과의 차이 (지난 기간이 0원이면 비교 안 함)', () => {
+  assert.deepEqual(statCompare('month', 120000, 100000), { word: '지난달', diff: 20000, pct: 20 });
+  assert.deepEqual(statCompare('week', 50000, 100000), { word: '지난주', diff: -50000, pct: 50 });
+  assert.equal(statCompare('year', 1000, 0), null);
+});
+
+test('roundPercents: 합이 언제나 100', () => {
+  assert.deepEqual(roundPercents([1, 1, 1]), [34, 33, 33]);
+  assert.deepEqual(roundPercents([50, 50]), [50, 50]);
+  assert.deepEqual(roundPercents([0, 0]), [0, 0]);
+  const p = roundPercents([123, 4567, 890, 12, 3456]);
+  assert.equal(p.reduce((a, b) => a + b, 0), 100);
+});
+
+test('donutSlices: 큰 것부터 다섯 개, 나머지는 기타 한 조각', () => {
+  const rows = [
+    { key: 1, name: '식비', total: 500 }, { key: 2, name: '교통', total: 100 }, { key: 3, name: '쇼핑', total: 200 },
+    { key: 4, name: '문화', total: 50 }, { key: 5, name: '의료', total: 40 }, { key: 6, name: '경조사', total: 30 },
+    { key: 7, name: '기타지출', total: 80 }, { key: 8, name: '빈 것', total: 0 },
+  ];
+  const s = donutSlices(rows);
+  assert.deepEqual(s.map((x) => x.name), ['식비', '쇼핑', '교통', '기타지출', '문화', '기타']);
+  assert.equal(s[5].total, 70);                                   // 의료 40 + 경조사 30
+  assert.deepEqual(s[5].members.map((m) => m.name), ['의료', '경조사']);
+  assert.equal(s.reduce((a, x) => a + x.pct, 0), 100);
+  assert.equal(donutSlices(rows.slice(0, 3)).length, 3);          // 여섯 개가 안 되면 기타가 없다
+  assert.deepEqual(donutSlices([]), []);
+});
+
+test('assignSlots: 같은 카테고리는 같은 색, 겹치면 빈 칸, 기타는 회색', () => {
+  const pref = new Map([[10, 0], [20, 1], [30, 1], [40, 9]]);
+  const slots = assignSlots(
+    [{ key: 20 }, { key: 10 }, { key: 30 }, { key: 40 }, { key: '__other', other: true }],
+    (k) => pref.get(k) ?? -1,
+  );
+  assert.equal(slots.get(10), 0);
+  assert.equal(slots.get(20), 1);
+  assert.equal(slots.get(30), 2);   // 1번 칸은 20이 먼저 가져갔다
+  assert.equal(slots.get(40), 3);   // 칸 밖을 원하면 남은 칸
+  assert.equal(slots.get('__other'), -1);
+});
+
+test('statByCategory: 지출만, 카테고리별 합과 건수', () => {
+  const cats = [{ id: 1, name: '식비' }, { id: 2, name: '교통' }];
+  const txs = [
+    { kind: 'expense', amount: 1000, category_id: 1 }, { kind: 'expense', amount: 3000, category_id: 2 },
+    { kind: 'expense', amount: 500, category_id: 1 }, { kind: 'income', amount: 99999, category_id: 1 },
+    { kind: 'expense', amount: 200, category_id: null },
+  ];
+  assert.deepEqual(statByCategory(txs, cats), [
+    { key: 2, name: '교통', total: 3000, count: 1 },
+    { key: 1, name: '식비', total: 1500, count: 2 },
+    { key: null, name: '미분류', total: 200, count: 1 },
+  ]);
+});
+
+test('statByHow: 식비를 어떻게(배달·컬리…)로, 직접 적은 것은 따로', () => {
+  const cats = [{ id: 70, name: '배달' }, { id: 71, name: '컬리' }];
+  const howOfTx = new Map([[1, 70], [2, 70], [3, 71]]);
+  const txs = [
+    { id: 1, kind: 'expense', amount: 20000 }, { id: 2, kind: 'expense', amount: 15000 },
+    { id: 3, kind: 'expense', amount: 30000 }, { id: 4, kind: 'expense', amount: 5000 },
+  ];
+  assert.deepEqual(statByHow(txs, howOfTx, cats), [
+    { key: 70, name: '배달', total: 35000, count: 2 },
+    { key: 71, name: '컬리', total: 30000, count: 1 },
+    { key: null, name: '직접 적음', total: 5000, count: 1 },
+  ]);
+});
+
+test('statByMemo / statByWho', () => {
+  const txs = [
+    { kind: 'expense', amount: 3000, memo: '택시', created_by: 'a' },
+    { kind: 'expense', amount: 1500, memo: ' 택시 ', created_by: 'b' },
+    { kind: 'expense', amount: 1400, memo: '', created_by: 'b' },
+  ];
+  assert.deepEqual(statByMemo(txs).map((r) => [r.name, r.total]), [['택시', 4500], ['메모 없음', 1400]]);
+  const who = statByWho(txs, [{ id: 'a', name: '준혁' }, { id: 'b', name: '지은' }, { id: 'c', name: '안 씀' }]);
+  assert.deepEqual(who.map((r) => [r.name, r.total, r.pct]), [['준혁', 3000, 51], ['지은', 2900, 49]]);
+});
+
 test('howsForPlace: 어디서마다 어떻게를 나눠 보여 준다', () => {
   const HOME = 1, WORK = 2, OUT = 3;
   const hows = [
